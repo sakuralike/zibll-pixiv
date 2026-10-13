@@ -1,0 +1,277 @@
+:root {
+    --zibll-pixiv-ink: #1c2524;
+    --zibll-pixiv-muted: #687776;
+    --zibll-pixiv-border: rgba(28, 37, 36, .13);
+    --zibll-pixiv-surface: #fff;
+    --zibll-pixiv-surface-soft: #f2f6f3;
+    --zibll-pixiv-accent: #18856f;
+    --zibll-pixiv-accent-dark: #0d5b4d;
+    --zibll-pixiv-danger: #a33d3d;
+    --zibll-pixiv-radius: 18px;
+}
+
+.zibll-pixiv-page {
+    background:
+        radial-gradient(circle at 12% 8%, rgba(24, 133, 111, .12), transparent 34rem),
+        linear-gradient(150deg, #f8fbfa 0%, #eef3f0 100%);
+}
+
+.zibll-pixiv-viewer {
+    width: min(100% - 32px, 940px);
+    margin: clamp(24px, 5vw, 72px) auto;
+    color: var(--zibll-pixiv-ink);
+    font-family: inherit;
+}
+
+.zibll-pixiv-header {
+    margin-bottom: 22px;
+}
+
+.zibll-pixiv-header h1 {
+    margin: 0 0 8px;
+    font-size: clamp(1.8rem, 4vw, 3.2rem);
+    letter-spacing: -.035em;
+}
+
+.zibll-pixiv-subtitle,
+.zibll-pixiv-source,
+.zibll-pixiv-compliance,
+.zibll-pixiv-status {
+    color: var(--zibll-pixiv-muted);
+}
+
+.zibll-pixiv-form {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 10px;
+    background: var(--zibll-pixiv-surface);
+    border: 1px solid var(--zibll-pixiv-border);
+    border-radius: calc(var(--zibll-pixiv-radius) + 4px);
+    box-shadow: 0 18px 42px rgba(25, 50, 45, .08);
+}
+
+.zibll-pixiv-input,
+.zibll-pixiv-page-field input {
+    min-width: 0;
+    border: 1px solid var(--zibll-pixiv-border);
+    border-radius: 12px;
+    background: var(--zibll-pixiv-surface-soft);
+    color: var(--zibll-pixiv-ink);
+    padding: 13px 15px;
+    font: inherit;
+}
+
+.zibll-pixiv-input:focus,
+.zibll-pixiv-page-field input:focus,
+.zibll-pixiv-button:focus,
+.zibll-pixiv-submit:focus {
+    outline: 3px solid rgba(24, 133, 111, .25);
+    outline-offset: 2px;
+}
+
+.zibll-pixiv-submit,
+.zibll-pixiv-button {
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 16px;
+    background: var(--zibll-pixiv-accent-dark);
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 650;
+    transition: transform .2s ease, background .2s ease, opacity .2s ease;
+}
+
+.zibll-pixiv-submit:hover,
+.zibll-pixiv-button:hover {
+    background: var(--zibll-pixiv-accent);
+    transform: translateY(-1px);
+}
+
+.zibll-pixiv-button {
+    background: rgba(24, 133, 111, .12);
+    color: var(--zibll-pixiv-accent-dark);
+}
+
+.zibll-pixiv-button--accent {
+    background: var(--zibll-pixiv-accent);
+    color: #fff;
+}
+
+.zibll-pixiv-button:disabled {
+    cursor: not-allowed;
+    opacity: .45;
+    transform: none;
+}
+
+.zibll-pixiv-form-error,
+.zibll-pixiv-notice {
+    margin: 12px 0;
+    padding: 12px 15px;
+    border-radius: 12px;
+}
+
+.zibll-pixiv-form-error {
+    color: var(--zibll-pixiv-danger);
+    background: rgba(163, 61, 61, .08);
+}
+
+.zibll-pixiv-notice {
+    background: rgba(163, 61, 61, .1);
+    color: var(--zibll-pixiv-danger);
+}
+
+.zibll-pixiv-result {
+    min-height: 180px;
+    margin-top: 22px;
+    padding: clamp(16px, 3vw, 28px);
+    background: var(--zibll-pixiv-surface);
+    border: 1px solid var(--zibll-pixiv-border);
+    border-radius: var(--zibll-pixiv-radius);
+    box-shadow: 0 22px 55px rgba(25, 50, 45, .09);
+}
+
+.zibll-pixiv-image-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 180px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #e8efec;
+}
+
+.zibll-pixiv-lightbox,
+.zibll-pixiv-image-wrap a {
+    display: block;
+    width: 100%;
+}
+
+.zibll-pixiv-image {
+    display: block;
+    width: 100%;
+    max-height: 75vh;
+    object-fit: contain;
+    border-radius: 14px;
+}
+
+.zibll-pixiv-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 15px;
+}
+
+.zibll-pixiv-page-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--zibll-pixiv-muted);
+}
+
+.zibll-pixiv-page-field input {
+    width: 72px;
+    padding: 9px 10px;
+}
+
+.zibll-pixiv-status {
+    min-height: 1.5em;
+    margin: 12px 0 0;
+}
+
+.zibll-pixiv-inline-retry {
+    margin-left: 8px;
+    border: 0;
+    border-bottom: 1px solid currentColor;
+    background: none;
+    color: var(--zibll-pixiv-accent-dark);
+    cursor: pointer;
+    font: inherit;
+}
+
+.zibll-pixiv-compliance {
+    margin-top: 22px;
+    padding: 18px 20px;
+    border: 1px solid var(--zibll-pixiv-border);
+    border-radius: var(--zibll-pixiv-radius);
+    background: rgba(255, 255, 255, .72);
+    font-size: .94rem;
+}
+
+.zibll-pixiv-compliance h2 {
+    margin-top: 0;
+    font-size: 1.05rem;
+    color: var(--zibll-pixiv-ink);
+}
+
+.zibll-pixiv-compliance p:last-child {
+    margin-bottom: 0;
+}
+
+.zibll-pixiv-loading {
+    display: grid;
+    min-height: 150px;
+    place-items: center;
+    color: var(--zibll-pixiv-muted);
+}
+
+.zibll-pixiv-viewer.is-loading .zibll-pixiv-result {
+    background-image: linear-gradient(100deg, rgba(255, 255, 255, 0), rgba(24, 133, 111, .08), rgba(255, 255, 255, 0));
+    background-size: 200% 100%;
+    animation: zibll-pixiv-shimmer 1.4s linear infinite;
+}
+
+@keyframes zibll-pixiv-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --zibll-pixiv-ink: #e4eeeb;
+        --zibll-pixiv-muted: #a5bbb5;
+        --zibll-pixiv-border: rgba(228, 238, 235, .16);
+        --zibll-pixiv-surface: #1b2725;
+        --zibll-pixiv-surface-soft: #243531;
+    }
+
+    .zibll-pixiv-page {
+        background:
+            radial-gradient(circle at 15% 10%, rgba(24, 133, 111, .22), transparent 32rem),
+            #121b1a;
+    }
+
+    .zibll-pixiv-compliance {
+        background: rgba(27, 39, 37, .72);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .zibll-pixiv-submit,
+    .zibll-pixiv-button,
+    .zibll-pixiv-viewer.is-loading .zibll-pixiv-result {
+        animation: none;
+        transition: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .zibll-pixiv-viewer {
+        width: min(100% - 20px, 940px);
+        margin-top: 24px;
+    }
+
+    .zibll-pixiv-form {
+        grid-template-columns: 1fr;
+    }
+
+    .zibll-pixiv-submit {
+        width: 100%;
+    }
+
+    .zibll-pixiv-toolbar .zibll-pixiv-button {
+        flex: 1 1 calc(50% - 8px);
+    }
+}

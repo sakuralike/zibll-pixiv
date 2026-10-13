@@ -1,3 +1,14 @@
+# Only the plugin package directory is synchronized from this repository.
+/*
+!/.gitignore
+!/README.md
+!/zibll-pixiv/
+!/zibll-pixiv/**
+
+# Planning notes and local workspace state
+/.workbuddy/
+/项目规划文档/
+
 # Local configuration and secrets
 .env
 .env.*
