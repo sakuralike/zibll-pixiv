@@ -74,42 +74,36 @@ if (! $embedded && function_exists('get_header')) {
             <div class="zibll-pixiv-notice zibll-pixiv-notice--blocked" data-zibll-pixiv-blocked>
                 <strong><?php echo esc_html($context['blocked_message']); ?></strong>
             </div>
-        <?php elseif ($id !== '') : ?>
-            <div class="zibll-pixiv-loading" data-zibll-pixiv-loading>
-                <?php echo esc_html__('正在加载图片…', 'zibll-pixiv'); ?>
-            </div>
-        <?php else : ?>
+        <?php elseif ($id === '') : ?>
             <div class="zibll-pixiv-empty" data-zibll-pixiv-empty>
                 <?php echo esc_html__('提交作品 ID 后将在此处显示图片。', 'zibll-pixiv'); ?>
             </div>
         <?php endif; ?>
 
-        <div class="zibll-pixiv-image-wrap" data-zibll-pixiv-image-wrap hidden>
-            <a class="imgbox-container" data-imgbox data-zibll-pixiv-lightbox href="" target="_blank" rel="noopener">
-                <img class="zibll-pixiv-image" data-zibll-pixiv-image loading="lazy" alt="" />
-            </a>
-        </div>
-
-        <div class="zibll-pixiv-toolbar" data-zibll-pixiv-toolbar hidden>
-            <button type="button" class="zibll-pixiv-button" data-zibll-pixiv-prev><?php echo esc_html__('上一张', 'zibll-pixiv'); ?></button>
-            <label class="zibll-pixiv-page-field">
-                <span><?php echo esc_html__('页码', 'zibll-pixiv'); ?></span>
-                <input type="number" min="1" max="50" value="<?php echo esc_attr((string) $page); ?>" data-zibll-pixiv-page />
-            </label>
-            <button type="button" class="zibll-pixiv-button" data-zibll-pixiv-next><?php echo esc_html__('下一张', 'zibll-pixiv'); ?></button>
-            <button type="button" class="zibll-pixiv-button zibll-pixiv-button--accent" data-zibll-pixiv-download><?php echo esc_html__('下载原图', 'zibll-pixiv'); ?></button>
-            <button type="button" class="zibll-pixiv-button" data-zibll-pixiv-copy><?php echo esc_html__('复制直链', 'zibll-pixiv'); ?></button>
-        </div>
+        <div class="zibll-pixiv-gallery" data-zibll-pixiv-gallery hidden></div>
+        <template data-zibll-pixiv-card-template>
+            <article class="zibll-pixiv-card" data-zibll-pixiv-card>
+                <h2 class="zibll-pixiv-card-title" data-zibll-pixiv-card-page></h2>
+                <div class="zibll-pixiv-image-wrap">
+                    <a class="imgbox-container" data-imgbox data-zibll-pixiv-lightbox href="" target="_blank" rel="noopener">
+                        <img class="zibll-pixiv-image" data-zibll-pixiv-image loading="lazy" alt="" />
+                    </a>
+                </div>
+                <div class="zibll-pixiv-toolbar">
+                    <button type="button" class="zibll-pixiv-button zibll-pixiv-button--accent" data-zibll-pixiv-download><?php echo esc_html__('下载原图', 'zibll-pixiv'); ?></button>
+                    <button type="button" class="zibll-pixiv-button" data-zibll-pixiv-copy><?php echo esc_html__('复制直链', 'zibll-pixiv'); ?></button>
+                </div>
+                <p class="zibll-pixiv-card-status" data-zibll-pixiv-card-status hidden></p>
+            </article>
+        </template>
         <p class="zibll-pixiv-status" data-zibll-pixiv-status role="status"></p>
     </section>
 
-    <?php if ($id !== '') : ?>
-        <p class="zibll-pixiv-source">
-            <a href="<?php echo esc_url('https://www.pixiv.net/artworks/' . rawurlencode($id)); ?>" target="_blank" rel="noopener noreferrer">
-                <?php echo esc_html__('在 Pixiv 查看原作品', 'zibll-pixiv'); ?>
-            </a>
-        </p>
-    <?php endif; ?>
+    <p class="zibll-pixiv-source"<?php echo $id === '' ? ' hidden' : ''; ?>>
+        <a data-zibll-pixiv-source href="<?php echo $id !== '' ? esc_url('https://www.pixiv.net/artworks/' . rawurlencode($id)) : ''; ?>" target="_blank" rel="noopener noreferrer">
+            <?php echo esc_html__('在 Pixiv 查看原作品', 'zibll-pixiv'); ?>
+        </a>
+    </p>
 
     <aside class="zibll-pixiv-compliance">
         <h2><?php echo esc_html__('使用说明与版权提示', 'zibll-pixiv'); ?></h2>

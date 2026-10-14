@@ -23,6 +23,10 @@
     font-family: inherit;
 }
 
+.zibll-pixiv-viewer [hidden] {
+    display: none;
+}
+
 .zibll-pixiv-header {
     margin-bottom: 22px;
 }
@@ -51,8 +55,7 @@
     box-shadow: 0 18px 42px rgba(25, 50, 45, .08);
 }
 
-.zibll-pixiv-input,
-.zibll-pixiv-page-field input {
+.zibll-pixiv-input {
     min-width: 0;
     border: 1px solid var(--zibll-pixiv-border);
     border-radius: 12px;
@@ -63,7 +66,6 @@
 }
 
 .zibll-pixiv-input:focus,
-.zibll-pixiv-page-field input:focus,
 .zibll-pixiv-button:focus,
 .zibll-pixiv-submit:focus {
     outline: 3px solid rgba(24, 133, 111, .25);
@@ -132,6 +134,34 @@
     box-shadow: 0 22px 55px rgba(25, 50, 45, .09);
 }
 
+.zibll-pixiv-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 20px;
+}
+
+.zibll-pixiv-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--zibll-pixiv-border);
+    border-radius: var(--zibll-pixiv-radius);
+    scroll-margin-top: 24px;
+}
+
+.zibll-pixiv-card-title {
+    margin: 0 0 10px;
+    font-size: 1rem;
+    color: var(--zibll-pixiv-muted);
+}
+
+.zibll-pixiv-card-status {
+    margin: 12px 0 0;
+    overflow-wrap: anywhere;
+    font-size: .875rem;
+    color: var(--zibll-pixiv-muted);
+}
+
 .zibll-pixiv-image-wrap {
     position: relative;
     display: grid;
@@ -162,18 +192,6 @@
     align-items: center;
     gap: 8px;
     margin-top: 15px;
-}
-
-.zibll-pixiv-page-field {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--zibll-pixiv-muted);
-}
-
-.zibll-pixiv-page-field input {
-    width: 72px;
-    padding: 9px 10px;
 }
 
 .zibll-pixiv-status {
@@ -208,13 +226,6 @@
 
 .zibll-pixiv-compliance p:last-child {
     margin-bottom: 0;
-}
-
-.zibll-pixiv-loading {
-    display: grid;
-    min-height: 150px;
-    place-items: center;
-    color: var(--zibll-pixiv-muted);
 }
 
 .zibll-pixiv-viewer.is-loading .zibll-pixiv-result {
@@ -264,6 +275,10 @@
     }
 
     .zibll-pixiv-form {
+        grid-template-columns: 1fr;
+    }
+
+    .zibll-pixiv-gallery {
         grid-template-columns: 1fr;
     }
 

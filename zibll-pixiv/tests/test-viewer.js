@@ -8,6 +8,7 @@ const viewerSource = fs.readFileSync(
     require('path').join(__dirname, '..', 'assets', 'js', 'viewer.js'),
     'utf8'
 );
+const environments = [];
 
 class FakeElement {
     constructor(tagName, attributes) {
@@ -22,6 +23,12 @@ class FakeElement {
         this.classList = {
             toggle: (name, enabled) => {
                 this.classList[name] = Boolean(enabled);
+            },
+            add: (name) => {
+                this.classList[name] = true;
+            },
+            remove: (name) => {
+                this.classList[name] = false;
             }
         };
     }
@@ -45,18 +52,66 @@ class FakeElement {
         this.attributes[name] = String(value);
     }
 
+    get firstElementChild() {
+        return this.children[0] || null;
+    }
+
+    get parentElement() {
+        return this.parentNode || null;
+    }
+
+    matches(selector) {
+        if (selector.charAt(0) === '#') {
+            return this.getAttribute('id') === selector.slice(1);
+        }
+        const attribute = selector.match(/^\[([^\]=]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+        if (attribute) {
+            return this.getAttribute(attribute[1]) !== null
+                && (attribute[2] === undefined || this.getAttribute(attribute[1]) === attribute[2]);
+        }
+        return this.tagName.toLowerCase() === selector.toLowerCase();
+    }
+
     querySelector(selector) {
-        return this.childrenBySelector && this.childrenBySelector[selector]
-            ? this.childrenBySelector[selector]
-            : null;
+        if (this.childrenBySelector && this.childrenBySelector[selector]) {
+            return this.childrenBySelector[selector];
+        }
+        return this.querySelectorAll(selector)[0] || null;
+    }
+
+    querySelectorAll(selector) {
+        const matches = [];
+        this.children.forEach((child) => {
+            if (child.matches(selector)) {
+                matches.push(child);
+            }
+            matches.push(...child.querySelectorAll(selector));
+        });
+        return matches;
+    }
+
+    cloneNode(deep) {
+        const clone = new FakeElement(this.tagName, this.attributes);
+        ['hidden', 'disabled', 'value', '_textContent', 'className'].forEach((name) => {
+            clone[name] = this[name];
+        });
+        if (deep) {
+            this.children.forEach((child) => clone.appendChild(child.cloneNode(true)));
+        }
+        return clone;
     }
 
     appendChild(child) {
+        child.parentNode = this;
         this.children.push(child);
         return child;
     }
 
     remove() {
+        if (this.parentNode) {
+            this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+            this.parentNode = null;
+        }
         this.removed = true;
     }
 
@@ -68,16 +123,43 @@ class FakeElement {
     }
 
     dispatch(type, event) {
+        const dispatched = event || {
+            target: this,
+            defaultPrevented: false,
+            preventDefault() {
+                this.defaultPrevented = true;
+            }
+        };
+        dispatched.currentTarget = this;
         const callbacks = this.listeners[type] || [];
-        callbacks.forEach((callback) => callback(event || {
-            preventDefault() {}
-        }));
+        callbacks.forEach((callback) => callback(dispatched));
+        if (dispatched.bubbles && !dispatched.propagationStopped && this.parentNode) {
+            this.parentNode.dispatch(type, dispatched);
+        }
+        return dispatched;
     }
 
     click() {
-        this.dispatch('click', {
-            preventDefault() {}
+        if (this.disabled) {
+            return;
+        }
+        this.wasClicked = true;
+        this.clickCount = (this.clickCount || 0) + 1;
+        this.lastClickEvent = this.dispatch('click', {
+            target: this,
+            bubbles: true,
+            defaultPrevented: false,
+            preventDefault() {
+                this.defaultPrevented = true;
+            },
+            stopPropagation() {
+                this.propagationStopped = true;
+            }
         });
+    }
+
+    focus() {
+        this.focused = true;
     }
 }
 
@@ -144,14 +226,17 @@ function createEnvironment(fetchPlan, overrides) {
         prettyPermalinks: true,
         baseUrl: 'https://site.test/pixiv/',
         filterEffective: false,
+        initialId: '123',
+        initialPage: 1,
+        blocked: false,
         strings: {}
     }, overrides || {});
     const selectors = {};
     const root = new FakeElement('main', {
-        'data-id': '123',
-        'data-page': '1',
+        'data-id': settings.initialId,
+        'data-page': String(settings.initialPage),
         'data-base-url': settings.baseUrl,
-        'data-blocked': '0',
+        'data-blocked': settings.blocked ? '1' : '0',
         'data-filter-effective': '0'
     });
     const create = (tagName, selector) => {
@@ -163,32 +248,46 @@ function createEnvironment(fetchPlan, overrides) {
     selectors['#zibll-pixiv-input'] = create('input', '#zibll-pixiv-input');
     selectors['[data-zibll-pixiv-form-error]'] = create('p', '[data-zibll-pixiv-form-error]');
     selectors['[data-zibll-pixiv-result]'] = create('section', '[data-zibll-pixiv-result]');
-    selectors['[data-zibll-pixiv-image-wrap]'] = create('div', '[data-zibll-pixiv-image-wrap]');
-    selectors['[data-zibll-pixiv-image]'] = create('img', '[data-zibll-pixiv-image]');
-    selectors['[data-zibll-pixiv-lightbox]'] = create('a', '[data-zibll-pixiv-lightbox]');
-    selectors['[data-zibll-pixiv-toolbar]'] = create('div', '[data-zibll-pixiv-toolbar]');
     selectors['[data-zibll-pixiv-status]'] = create('p', '[data-zibll-pixiv-status]');
-    selectors['[data-zibll-pixiv-page]'] = create('input', '[data-zibll-pixiv-page]');
-    selectors['[data-zibll-pixiv-prev]'] = create('button', '[data-zibll-pixiv-prev]');
-    selectors['[data-zibll-pixiv-next]'] = create('button', '[data-zibll-pixiv-next]');
-    selectors['[data-zibll-pixiv-download]'] = create('button', '[data-zibll-pixiv-download]');
-    selectors['[data-zibll-pixiv-copy]'] = create('button', '[data-zibll-pixiv-copy]');
+    const source = create('a', '[data-zibll-pixiv-source]');
+    new FakeElement('p').appendChild(source);
+    const gallery = create('div', '[data-zibll-pixiv-gallery]');
+    const template = create('template', '[data-zibll-pixiv-card-template]');
+    template.content = new FakeElement('fragment');
+    const card = template.content.appendChild(new FakeElement('article', {
+        'data-zibll-pixiv-card': ''
+    }));
+    card.appendChild(new FakeElement('span', { 'data-zibll-pixiv-card-page': '' }));
+    const lightbox = card.appendChild(new FakeElement('a', {
+        'data-zibll-pixiv-lightbox': ''
+    }));
+    lightbox.appendChild(new FakeElement('img', { 'data-zibll-pixiv-image': '' }));
+    card.appendChild(new FakeElement('button', { 'data-zibll-pixiv-download': '' }));
+    card.appendChild(new FakeElement('button', { 'data-zibll-pixiv-copy': '' }));
+    card.appendChild(new FakeElement('p', { 'data-zibll-pixiv-card-status': '' }));
     root.childrenBySelector = selectors;
-    selectors['#zibll-pixiv-input'].value = '123';
-    selectors['[data-zibll-pixiv-page]'].value = '1';
+    selectors['#zibll-pixiv-input'].value = settings.initialId;
 
     const revoked = [];
+    const createdUrls = [];
+    const createdElements = [];
+    const clipboardWrites = [];
+    const timers = new Set();
     let objectUrlCounter = 0;
     const historyCalls = [];
     const windowListeners = {};
     const body = new FakeElement('body');
+    body.appendChild(root);
+    root.appendChild(gallery);
     const document = {
         body,
         querySelector(selector) {
             return selector === '[data-zibll-pixiv-viewer]' ? root : null;
         },
         createElement(tagName) {
-            return new FakeElement(tagName);
+            const element = new FakeElement(tagName);
+            createdElements.push(element);
+            return element;
         }
     };
     const window = {
@@ -196,7 +295,9 @@ function createEnvironment(fetchPlan, overrides) {
         URL: {
             createObjectURL() {
                 objectUrlCounter += 1;
-                return 'blob:test-' + objectUrlCounter;
+                const url = 'blob:test-' + objectUrlCounter;
+                createdUrls.push(url);
+                return url;
             },
             revokeObjectURL(url) {
                 revoked.push(url);
@@ -212,12 +313,25 @@ function createEnvironment(fetchPlan, overrides) {
             pathname: '/pixiv/'
         },
         navigator: {
-            clipboard: null
+            clipboard: {
+                writeText(value) {
+                    clipboardWrites.push(value);
+                    return Promise.resolve();
+                }
+            }
         },
         setTimeout(callback, milliseconds) {
-            return setTimeout(callback, Math.min(milliseconds, settings.timerCap));
+            const timer = setTimeout(() => {
+                timers.delete(timer);
+                callback();
+            }, Math.min(milliseconds, settings.timerCap));
+            timers.add(timer);
+            return timer;
         },
-        clearTimeout,
+        clearTimeout(timer) {
+            timers.delete(timer);
+            clearTimeout(timer);
+        },
         addEventListener(type, callback) {
             windowListeners[type] = callback;
         },
@@ -225,11 +339,19 @@ function createEnvironment(fetchPlan, overrides) {
     };
 
     let fetchCalls = [];
+    const requestOptions = [];
     let fetchCount = 0;
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
     const fetch = (url, options) => {
         fetchCalls.push(url);
+        requestOptions.push(options);
         fetchCount += 1;
-        return fetchPlan(url, options, fetchCount);
+        activeRequests += 1;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        return Promise.resolve().then(() => fetchPlan(url, options, fetchCount)).finally(() => {
+            activeRequests -= 1;
+        });
     };
 
     const context = vm.createContext({
@@ -244,21 +366,40 @@ function createEnvironment(fetchPlan, overrides) {
         clearTimeout,
         console
     });
-    vm.runInContext(viewerSource, context, { filename: 'viewer.js' });
-
-    return {
+    const environment = {
         root,
-        image: selectors['[data-zibll-pixiv-image]'],
+        form: selectors['[data-zibll-pixiv-form]'],
+        input: selectors['#zibll-pixiv-input'],
+        formError: selectors['[data-zibll-pixiv-form-error]'],
         status: selectors['[data-zibll-pixiv-status]'],
-        pageInput: selectors['[data-zibll-pixiv-page]'],
-        next: selectors['[data-zibll-pixiv-next]'],
-        previous: selectors['[data-zibll-pixiv-prev]'],
+        source,
+        gallery,
+        cards() {
+            return gallery.querySelectorAll('[data-zibll-pixiv-card]');
+        },
         revoked,
+        createdUrls,
+        createdElements,
+        clipboardWrites,
         historyCalls,
         fetchCalls,
+        requestOptions,
+        maxActiveRequests() {
+            return maxActiveRequests;
+        },
         window,
-        body
+        body,
+        close() {
+            if (windowListeners.beforeunload) {
+                windowListeners.beforeunload();
+            }
+            timers.forEach(clearTimeout);
+            timers.clear();
+        }
     };
+    environments.push(environment);
+    vm.runInContext(viewerSource, context, { filename: 'viewer.js' });
+    return environment;
 }
 
 function wait(milliseconds) {
@@ -275,32 +416,81 @@ function statusText(environment) {
     return environment.status.textContent;
 }
 
-async function testObjectUrlCacheReuse() {
-    const environment = createEnvironment(responseFor(200), { failover: false });
-    await wait(30);
-    environment.next.click();
-    await wait(30);
-    environment.previous.click();
-    await wait(30);
-    assert.strictEqual(environment.image.src, 'blob:test-1');
-    assert.ok(
-        !environment.revoked.includes(environment.image.src),
-        'a cached object URL must not be reused after revokeObjectURL'
-    );
+async function waitFor(predicate, message) {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (predicate()) {
+            return;
+        }
+        await wait(5);
+    }
+    assert.fail(message || 'expected state did not arrive');
 }
 
-async function testBodyTimeout() {
-    const environment = createEnvironment((url, options) => Promise.resolve(
-        makeResponse(200, { hanging: true, signal: options.signal })
-    ), { failover: false });
-    await wait(120);
-    assert.ok(
-        statusText(environment).includes('网络超时'),
-        'body timeout must abort a response whose headers already arrived'
-    );
+function retryButton(environment) {
+    return environment.status.querySelector('button');
 }
 
-async function testFailedNavigationDoesNotSkipPage() {
+function assertUnknownEnd(environment) {
+    assert.ok(!statusText(environment).includes('已到达最后一张'));
+    assert.ok(!statusText(environment).includes('已全部加载'));
+    assert.ok(/无法确认|未确认|不能确认|不确定/.test(statusText(environment)),
+        'paused scans must disclose that later pages are unconfirmed');
+    assert.ok(retryButton(environment), 'a failed page must remain retryable');
+}
+
+async function testProgressiveCardsPauseAtUnknownPage() {
+    let releaseSecond;
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123.jpg')) {
+            return responseFor(200)(url, options);
+        }
+        if (url.endsWith('/123-2.jpg')) {
+            return new Promise((resolve) => {
+                releaseSecond = () => resolve(makeResponse(200));
+            });
+        }
+        return Promise.reject(new TypeError('cors failure'));
+    }, { failover: false, timeout: 500, timerCap: 500 });
+    await waitFor(() => releaseSecond);
+    assert.strictEqual(environment.cards().length, 1, 'the first card must appear before page two finishes');
+    releaseSecond();
+    await waitFor(() => retryButton(environment));
+    assert.strictEqual(environment.cards().length, 2, 'successful pages must remain visible together');
+    assert.deepStrictEqual(environment.fetchCalls, [
+        'https://pixiv.re/123.jpg',
+        'https://pixiv.re/123-2.jpg',
+        'https://pixiv.re/123-3.jpg'
+    ]);
+    const images = environment.cards().map((card) => card.querySelector('[data-zibll-pixiv-image]'));
+    assert.deepStrictEqual(images.map((image) => image.src), ['blob:test-1', 'blob:test-2']);
+    assert.deepStrictEqual(environment.revoked, [], 'visible card object URLs must stay valid');
+    assertUnknownEnd(environment);
+}
+
+async function testFailuresPauseWithoutClaimingCompletion() {
+    for (const failure of ['404', 'network', 'notImage']) {
+        const environment = createEnvironment((url, options) => {
+            if (url.endsWith('/123.jpg')) {
+                return responseFor(200)(url, options);
+            }
+            if (failure === 'network') {
+                return Promise.reject(new TypeError('cors failure'));
+            }
+            return responseFor(failure === '404' ? 404 : 200, {
+                headers: { 'content-type': failure === 'notImage' ? 'text/html' : 'image/jpeg' }
+            })(url, options);
+        }, { failover: false });
+        await waitFor(() => retryButton(environment));
+        assert.strictEqual(environment.cards().length, 1, failure + ' must preserve loaded cards');
+        assert.deepStrictEqual(environment.fetchCalls, [
+            'https://pixiv.re/123.jpg',
+            'https://pixiv.re/123-2.jpg'
+        ]);
+        assertUnknownEnd(environment);
+    }
+}
+
+async function testRetryKeepsFailedPageAndLoadedCards() {
     let pageTwoAttempts = 0;
     const environment = createEnvironment((url, options) => {
         if (url.endsWith('/123.jpg')) {
@@ -312,62 +502,173 @@ async function testFailedNavigationDoesNotSkipPage() {
                 ? responseFor(500)(url, options)
                 : responseFor(200)(url, options);
         }
-        return responseFor(200)(url, options);
+        return responseFor(404)(url, options);
     }, { failover: false });
-    await wait(30);
-    environment.next.click();
-    await wait(30);
-    assert.strictEqual(environment.image.src, 'blob:test-1');
-    environment.next.click();
-    await wait(30);
-    assert.strictEqual(pageTwoAttempts, 2, 'next after a failed page must retry that page');
-    assert.ok(environment.image.src, 'the retry should eventually load an image');
+    await waitFor(() => retryButton(environment));
+    const firstCard = environment.cards()[0];
+    retryButton(environment).click();
+    await waitFor(() => environment.cards().length === 2 && retryButton(environment));
+    assert.strictEqual(pageTwoAttempts, 2, 'retry must request the failed page, not skip it');
+    assert.strictEqual(environment.cards()[0], firstCard, 'retry must not replace loaded cards');
+    assert.deepStrictEqual(environment.revoked, [], 'retry must not invalidate displayed images');
+    assert.deepStrictEqual(environment.fetchCalls, [
+        'https://pixiv.re/123.jpg',
+        'https://pixiv.re/123-2.jpg',
+        'https://pixiv.re/123-2.jpg',
+        'https://pixiv.re/123-3.jpg'
+    ]);
 }
 
-async function testCacheHitCancelsStaleRequest() {
-    let releasePageTwo;
+async function testSameArtworkSubmissionResumesFailedPage() {
+    let pageTwoAttempts = 0;
     const environment = createEnvironment((url, options) => {
         if (url.endsWith('/123.jpg')) {
             return responseFor(200)(url, options);
         }
         if (url.endsWith('/123-2.jpg')) {
-            return new Promise((resolve, reject) => {
-                releasePageTwo = () => resolve(makeResponse(200, { signal: options.signal }));
-                options.signal.addEventListener('abort', () => {
-                    reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
-                }, { once: true });
+            pageTwoAttempts += 1;
+            return responseFor(pageTwoAttempts === 1 ? 500 : 200)(url, options);
+        }
+        return responseFor(404)(url, options);
+    }, { failover: false });
+    await waitFor(() => retryButton(environment));
+    const firstCard = environment.cards()[0];
+    environment.input.value = '123';
+    environment.form.dispatch('submit');
+    await waitFor(() => environment.cards().length === 2 && retryButton(environment));
+    assert.strictEqual(environment.cards()[0], firstCard);
+    assert.strictEqual(environment.fetchCalls.filter((url) => url.endsWith('/123.jpg')).length, 1);
+    assert.strictEqual(pageTwoAttempts, 2);
+    assert.deepStrictEqual(environment.revoked, []);
+}
+
+async function testSameArtworkSubmissionDuringLoadIsIdempotent() {
+    let releaseFirst;
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123.jpg')) {
+            return new Promise((resolve) => {
+                releaseFirst = () => resolve(makeResponse(200));
             });
         }
+        return responseFor(404)(url, options);
+    }, { failover: false, timeout: 500, timerCap: 500 });
+    await waitFor(() => releaseFirst);
+    environment.form.dispatch('submit');
+    environment.form.dispatch('submit');
+    await wait(10);
+    assert.deepStrictEqual(environment.fetchCalls, ['https://pixiv.re/123.jpg']);
+    assert.ok(!environment.requestOptions[0].signal.aborted, 'duplicate submits must preserve the active request');
+    releaseFirst();
+    await waitFor(() => retryButton(environment));
+    assert.strictEqual(environment.cards().length, 1);
+    assert.deepStrictEqual(environment.fetchCalls, [
+        'https://pixiv.re/123.jpg', 'https://pixiv.re/123-2.jpg'
+    ]);
+}
+
+async function testBodyTimeout() {
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123.jpg')) {
+            return responseFor(200)(url, options);
+        }
+        return Promise.resolve(makeResponse(200, { hanging: true, signal: options.signal }));
+    }, { failover: false });
+    await waitFor(() => retryButton(environment));
+    assert.ok(statusText(environment).includes('网络超时'), 'timeout must include response-body reads');
+    assert.ok(environment.requestOptions[1].signal.aborted);
+    assert.strictEqual(environment.cards().length, 1);
+    assertUnknownEnd(environment);
+}
+
+async function testSwitchArtworkCancelsStaleResponse() {
+    let releaseOldPage;
+    let oldSignal;
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123-3.jpg')) {
+            oldSignal = options.signal;
+            return new Promise((resolve) => {
+                releaseOldPage = () => resolve(makeResponse(200));
+            });
+        }
+        if (url.endsWith('/456-2.jpg')) {
+            return responseFor(404)(url, options);
+        }
         return responseFor(200)(url, options);
-    }, { failover: false, timeout: 100, timerCap: 200 });
-    await wait(30);
-    environment.next.click();
-    await wait(5);
-    environment.previous.click();
-    await wait(30);
-    assert.strictEqual(environment.image.src, 'blob:test-1');
-    if (releasePageTwo) {
-        releasePageTwo();
-    }
-    await wait(30);
-    assert.strictEqual(environment.image.src, 'blob:test-1');
-    assert.strictEqual(environment.root.getAttribute('data-page'), '1');
+    }, { failover: false, timeout: 500, timerCap: 500 });
+    await waitFor(() => releaseOldPage);
+    assert.strictEqual(environment.cards().length, 2);
+    environment.input.value = '456';
+    environment.form.dispatch('submit');
+    await waitFor(() => retryButton(environment));
+    assert.ok(oldSignal.aborted, 'switching artwork must abort its pending image request');
+    assert.deepStrictEqual(environment.revoked, ['blob:test-1', 'blob:test-2']);
+    releaseOldPage();
+    await wait(10);
+    assert.strictEqual(environment.cards().length, 1, 'late old-artwork responses must not append cards');
+    assert.strictEqual(environment.cards()[0].querySelector('[data-zibll-pixiv-image]').src, 'blob:test-3');
+    assert.strictEqual(environment.root.getAttribute('data-id'), '456');
+    assert.strictEqual(environment.source.href, 'https://www.pixiv.net/artworks/456');
+    assert.deepStrictEqual(environment.createdUrls, ['blob:test-1', 'blob:test-2', 'blob:test-3']);
+}
+
+async function testSwitchArtworkCancels503Backoff() {
+    let oldSignal;
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123.jpg')) {
+            oldSignal = options.signal;
+            return responseFor(503, { headers: { 'retry-after': '1' } })(url, options);
+        }
+        return responseFor(url.endsWith('/456.jpg') ? 200 : 404)(url, options);
+    }, { failover: false, timeout: 500, timerCap: 40 });
+    await waitFor(() => statusText(environment).includes('服务繁忙'));
+    environment.input.value = '456';
+    environment.form.dispatch('submit');
+    await waitFor(() => retryButton(environment));
+    const newStatus = statusText(environment);
+    assert.ok(oldSignal.aborted, 'switching must cancel an in-progress Retry-After wait');
+    await wait(70);
+    assert.deepStrictEqual(environment.fetchCalls, [
+        'https://pixiv.re/123.jpg',
+        'https://pixiv.re/456.jpg',
+        'https://pixiv.re/456-2.jpg'
+    ]);
+    assert.strictEqual(environment.cards().length, 1);
+    assert.strictEqual(statusText(environment), newStatus, 'old backoff must not change the new artwork status');
+    assert.strictEqual(environment.root.getAttribute('data-id'), '456');
+}
+
+async function testUnloadRevokesEveryImage() {
+    let hangingSignal;
+    const environment = createEnvironment((url, options) => {
+        if (url.endsWith('/123-3.jpg')) {
+            hangingSignal = options.signal;
+            return Promise.resolve(makeResponse(200, { hanging: true, signal: options.signal }));
+        }
+        return responseFor(200)(url, options);
+    }, { failover: false, timeout: 500, timerCap: 500 });
+    await waitFor(() => hangingSignal);
+    assert.strictEqual(environment.cards().length, 2);
+    environment.close();
+    assert.ok(hangingSignal.aborted);
+    assert.deepStrictEqual(environment.revoked, ['blob:test-1', 'blob:test-2']);
+    await wait(10);
+    assert.ok(!environment.fetchCalls.some((url) => url.endsWith('/123-4.jpg')));
 }
 
 async function testPageOneDirectFallback() {
-    let calls = 0;
     const environment = createEnvironment((url, options) => {
-        calls += 1;
-        return calls === 1
-            ? Promise.reject(new TypeError('cors redirect'))
-            : responseFor(200)(url, options);
+        if (url.endsWith('/123.jpg')) {
+            return Promise.reject(new TypeError('cors redirect'));
+        }
+        return responseFor(url.endsWith('/123-1.jpg') ? 200 : 404)(url, options);
     }, { failover: false });
-    await wait(40);
+    await waitFor(() => retryButton(environment));
     assert.deepStrictEqual(environment.fetchCalls, [
         'https://pixiv.re/123.jpg',
-        'https://pixiv.re/123-1.jpg'
+        'https://pixiv.re/123-1.jpg',
+        'https://pixiv.re/123-2.jpg'
     ]);
-    assert.ok(environment.image.src, 'the direct page-one fallback should load');
+    assert.strictEqual(environment.cards().length, 1);
 }
 
 async function testDirect404StillAllowsBackup() {
@@ -378,21 +679,22 @@ async function testDirect404StillAllowsBackup() {
         if (url === 'https://pixiv.re/123-1.jpg') {
             return responseFor(404)(url, options);
         }
-        return responseFor(200)(url, options);
+        return responseFor(url === 'https://pixiv.nl/123.jpg' ? 200 : 404)(url, options);
     });
-    await wait(50);
+    await waitFor(() => retryButton(environment));
     assert.deepStrictEqual(environment.fetchCalls, [
         'https://pixiv.re/123.jpg',
         'https://pixiv.re/123-1.jpg',
-        'https://pixiv.nl/123.jpg'
+        'https://pixiv.nl/123.jpg',
+        'https://pixiv.re/123-2.jpg'
     ]);
-    assert.ok(environment.image.src, 'backup base URL should load after direct fallback 404');
+    assert.strictEqual(environment.cards().length, 1);
 }
 
 async function testBadStatusDoesNotFailover() {
     for (const status of [400, 404]) {
         const environment = createEnvironment((url, options) => responseFor(status)(url, options));
-        await wait(30);
+        await waitFor(() => retryButton(environment));
         assert.deepStrictEqual(
             environment.fetchCalls,
             ['https://pixiv.re/123.jpg'],
@@ -402,58 +704,210 @@ async function testBadStatusDoesNotFailover() {
 }
 
 async function test503RetriesAtMostThreeTimes() {
-    let calls = 0;
-    const environment = createEnvironment((url, options) => {
-        calls += 1;
-        return calls < 3
-            ? responseFor(503, { headers: { 'retry-after': '0' } })(url, options)
-            : responseFor(200)(url, options);
-    }, { failover: false });
-    await wait(100);
-    assert.strictEqual(calls, 3);
-    assert.ok(environment.image.src, 'a successful response after bounded retries should load');
+    for (const eventualSuccess of [true, false]) {
+        let pageOneCalls = 0;
+        const environment = createEnvironment((url, options) => {
+            if (!url.endsWith('/123.jpg')) {
+                return responseFor(404)(url, options);
+            }
+            pageOneCalls += 1;
+            return eventualSuccess && pageOneCalls === 3
+                ? responseFor(200)(url, options)
+                : responseFor(503, { headers: { 'retry-after': '0' } })(url, options);
+        }, { failover: false });
+        await waitFor(() => retryButton(environment));
+        assert.strictEqual(pageOneCalls, 3);
+        assert.strictEqual(environment.cards().length, eventualSuccess ? 1 : 0);
+    }
 }
 
-async function testNetworkFailureIsNotLastPage() {
-    const environment = createEnvironment((url) => {
-        if (url.endsWith('/123.jpg')) {
-            return responseFor(200)(url, { signal: new AbortController().signal });
+async function testSequentialRequests() {
+    const environment = createEnvironment((url) => new Promise((resolve) => {
+        setTimeout(() => resolve(makeResponse(url.endsWith('/123-4.jpg') ? 404 : 200)), 10);
+    }), { failover: false, timeout: 500, timerCap: 500 });
+    await waitFor(() => retryButton(environment));
+    assert.strictEqual(environment.cards().length, 3);
+    assert.strictEqual(environment.maxActiveRequests(), 1, 'automatic scanning must stay sequential');
+    environment.requestOptions.forEach((options) => {
+        assert.strictEqual(options.mode, 'cors');
+        assert.strictEqual(options.credentials, 'omit');
+    });
+}
+
+async function testPerCardCopyDownloadAndLightbox() {
+    const environment = createEnvironment((url, options) => responseFor(
+        url.endsWith('/123-3.jpg') ? 404 : 200
+    )(url, options), { failover: false });
+    await waitFor(() => retryButton(environment));
+    environment.cards().forEach((card) => {
+        card.querySelector('[data-zibll-pixiv-copy]').click();
+        card.querySelector('[data-zibll-pixiv-download]').click();
+    });
+    await wait(0);
+    assert.deepStrictEqual(environment.clipboardWrites, [
+        'https://pixiv.re/123.jpg', 'https://pixiv.re/123-2.jpg'
+    ]);
+    const downloads = environment.createdElements.filter((element) => element.download && element.wasClicked);
+    assert.deepStrictEqual(downloads.map((anchor) => anchor.download), ['123_p0.jpg', '123_p1.jpg']);
+    assert.deepStrictEqual(downloads.map((anchor) => anchor.href), ['blob:test-1', 'blob:test-2']);
+    assert.deepStrictEqual(environment.cards().map(
+        (card) => card.querySelector('[data-zibll-pixiv-lightbox]').href
+    ), ['blob:test-1', 'blob:test-2']);
+    environment.window.navigator.clipboard = null;
+    environment.cards()[0].querySelector('[data-zibll-pixiv-copy]').click();
+    assert.ok(environment.cards()[0].querySelector('[data-zibll-pixiv-card-status]').textContent.includes(
+        'https://pixiv.re/123.jpg'
+    ));
+    assert.ok(retryButton(environment), 'a per-card copy fallback must not remove the scan retry');
+}
+
+async function singleCardEnvironment() {
+    const environment = createEnvironment((url, options) => responseFor(
+        url.endsWith('/123.jpg') ? 200 : 404
+    )(url, options), { failover: false });
+    await waitFor(() => retryButton(environment));
+    return environment;
+}
+
+async function testThemeLightboxPreventsNativeNavigation() {
+    const environment = await singleCardEnvironment();
+    environment.window.Miniimgbox = function () {};
+    environment.window._win = { imgbox: true };
+    const image = environment.cards()[0].querySelector('[data-zibll-pixiv-image]');
+    let delegatedClicks = 0;
+    environment.body.addEventListener('click', (event) => {
+        if (event.target === image) {
+            delegatedClicks += 1;
         }
-        return Promise.reject(new TypeError('cors failure'));
-    }, { failover: false });
-    await wait(30);
-    environment.next.click();
-    await wait(50);
-    assert.ok(statusText(environment).includes('网络超时'));
-    assert.ok(!statusText(environment).includes('已到达最后一张'));
+    });
+    image.click();
+    assert.ok(image.lastClickEvent.defaultPrevented, 'theme lightbox clicks must not also open the Blob URL');
+    assert.strictEqual(delegatedClicks, 1, 'the image click must still reach the theme body delegate');
+}
+
+async function testMissingThemeLightboxKeepsNativeNavigation() {
+    const environment = await singleCardEnvironment();
+    const card = environment.cards()[0];
+    const image = card.querySelector('[data-zibll-pixiv-image]');
+    const lightbox = card.querySelector('[data-zibll-pixiv-lightbox]');
+    for (const theme of [
+        { constructor: undefined, settings: { imgbox: true } },
+        { constructor: function () {}, settings: { imgbox: false } },
+        { constructor: function () {}, settings: undefined }
+    ]) {
+        environment.window.Miniimgbox = theme.constructor;
+        environment.window._win = theme.settings;
+        image.click();
+        assert.ok(!image.lastClickEvent.defaultPrevented, 'native image opening is the no-lightbox fallback');
+        const imageClicks = image.clickCount;
+        lightbox.click();
+        assert.ok(!lightbox.lastClickEvent.defaultPrevented, 'native keyboard link opening must remain available');
+        assert.strictEqual(image.clickCount, imageClicks, 'disabled lightboxes must not synthesize extra image clicks');
+    }
+}
+
+async function testLightboxKeyboardActivationDelegatesOnce() {
+    const environment = await singleCardEnvironment();
+    environment.window.Miniimgbox = function () {};
+    environment.window._win = { imgbox: true };
+    const card = environment.cards()[0];
+    const image = card.querySelector('[data-zibll-pixiv-image]');
+    const lightbox = card.querySelector('[data-zibll-pixiv-lightbox]');
+    let delegatedImages = 0;
+    environment.body.addEventListener('click', (event) => {
+        if (event.target === image) {
+            delegatedImages += 1;
+        }
+    });
+    lightbox.click();
+    assert.ok(lightbox.lastClickEvent.defaultPrevented, 'keyboard activation must not open a second tab');
+    assert.ok(image.lastClickEvent.defaultPrevented, 'the synthesized image event must also prevent native navigation');
+    assert.strictEqual(lightbox.clickCount, 1);
+    assert.strictEqual(image.clickCount, 1, 'keyboard activation must synthesize exactly one image click');
+    assert.strictEqual(delegatedImages, 1, 'the theme delegate must receive the image event without recursion');
+}
+
+async function testPageLimit() {
+    const environment = createEnvironment(responseFor(200), { failover: false });
+    await waitFor(() => environment.cards().length === 50);
+    await wait(10);
+    assert.strictEqual(environment.fetchCalls.length, 50);
+    assert.strictEqual(environment.fetchCalls[49], 'https://pixiv.re/123-50.jpg');
+    assert.strictEqual(environment.cards().length, 50);
+    assert.ok(statusText(environment).includes('50'), 'the page cap must be explained');
+    assert.ok(!statusText(environment).includes('已全部加载'));
+    assert.strictEqual(retryButton(environment), null, 'the hard page limit cannot be retried past');
+}
+
+async function testDeepLinkStartingPage() {
+    const environment = createEnvironment((url, options) => responseFor(
+        url.endsWith('/123-3.jpg') ? 200 : 404
+    )(url, options), { failover: false, initialPage: 3 });
+    await waitFor(() => retryButton(environment));
+    assert.deepStrictEqual(environment.fetchCalls, [
+        'https://pixiv.re/123-3.jpg', 'https://pixiv.re/123-4.jpg'
+    ]);
+    assert.strictEqual(environment.cards().length, 1);
+    assert.ok(environment.cards()[0].querySelector('[data-zibll-pixiv-card-page]').textContent.includes('3'));
+    environment.cards()[0].querySelector('[data-zibll-pixiv-download]').click();
+    const download = environment.createdElements.find((element) => element.download && element.wasClicked);
+    assert.strictEqual(download.download, '123_p2.jpg');
+}
+
+async function testBlockedAndFilteredArtworkDoNotFetch() {
+    const blocked = createEnvironment(responseFor(200), { blocked: true });
+    await wait(10);
+    assert.deepStrictEqual(blocked.fetchCalls, []);
+    const filtered = createEnvironment(responseFor(200), { initialId: '', filterEffective: true });
+    filtered.input.value = '456';
+    filtered.form.dispatch('submit');
+    await wait(10);
+    assert.deepStrictEqual(filtered.fetchCalls, [], 'filtered submissions must go through the server');
+    assert.strictEqual(filtered.window.location.href, 'https://site.test/pixiv/456/');
 }
 
 const tests = [
-    ['object URL cache reuse', testObjectUrlCacheReuse],
+    ['progressive cards pause at unknown page', testProgressiveCardsPauseAtUnknownPage],
+    ['404/network/non-image pause without claiming completion', testFailuresPauseWithoutClaimingCompletion],
+    ['retry keeps failed page and loaded cards', testRetryKeepsFailedPageAndLoadedCards],
+    ['same artwork submission resumes failed page', testSameArtworkSubmissionResumesFailedPage],
+    ['same artwork submission during load is idempotent', testSameArtworkSubmissionDuringLoadIsIdempotent],
     ['body timeout', testBodyTimeout],
-    ['failed navigation page state', testFailedNavigationDoesNotSkipPage],
-    ['cache hit cancels stale request', testCacheHitCancelsStaleRequest],
+    ['switch artwork cancels stale responses and revokes URLs', testSwitchArtworkCancelsStaleResponse],
+    ['switch artwork cancels 503 backoff', testSwitchArtworkCancels503Backoff],
+    ['unload revokes every image', testUnloadRevokesEveryImage],
     ['page-one direct fallback', testPageOneDirectFallback],
     ['direct 404 allows backup', testDirect404StillAllowsBackup],
     ['400/404 base no failover', testBadStatusDoesNotFailover],
     ['bounded 503 retry', test503RetriesAtMostThreeTimes],
-    ['network failure is not last page', testNetworkFailureIsNotLastPage]
+    ['sequential requests', testSequentialRequests],
+    ['per-card copy/download/lightbox', testPerCardCopyDownloadAndLightbox],
+    ['theme lightbox prevents native navigation', testThemeLightboxPreventsNativeNavigation],
+    ['missing theme lightbox keeps native navigation', testMissingThemeLightboxKeepsNativeNavigation],
+    ['lightbox keyboard activation delegates once', testLightboxKeyboardActivationDelegatesOnce],
+    ['50-page cap', testPageLimit],
+    ['deep-link starting page', testDeepLinkStartingPage],
+    ['blocked and filtered artwork do not fetch', testBlockedAndFilteredArtworkDoNotFetch]
 ];
 
 (async () => {
     let failed = 0;
     for (const [name, test] of tests) {
+        let deadline;
         try {
             await Promise.race([
                 test(),
                 new Promise((resolve, reject) => {
-                    setTimeout(() => reject(new Error('test timeout')), 1000);
+                    deadline = setTimeout(() => reject(new Error('test timeout')), 2000);
                 })
             ]);
             console.log('PASS ' + name);
         } catch (error) {
             failed += 1;
             console.error('FAIL ' + name + ': ' + error.message);
+        } finally {
+            clearTimeout(deadline);
+            environments.splice(0).forEach((environment) => environment.close());
         }
     }
     if (failed > 0) {

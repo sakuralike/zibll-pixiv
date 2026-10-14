@@ -90,3 +90,15 @@ msgstr ""
 
 msgid "图片由浏览器直接请求第三方代理服务；该服务可能看到您的 IP 地址。本站不接收、不缓存、不落盘图片内容。"
 msgstr ""
+
+msgid "已加载 {count} 张，正在加载第 {page} 张…"
+msgstr ""
+
+msgid "已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。"
+msgstr ""
+
+msgid "已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。"
+msgstr ""
+
+msgid "第 {page} 张"
+msgstr ""

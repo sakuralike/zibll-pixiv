@@ -86,13 +86,13 @@ final class Zibll_Pixiv_Plugin
             'zibll-pixiv-viewer',
             ZIBLL_PIXIV_URL . 'assets/css/viewer.css',
             array(),
-            ZIBLL_PIXIV_VERSION
+            ZIBLL_PIXIV_VERSION . '.' . filemtime(ZIBLL_PIXIV_DIR . 'assets/css/viewer.css')
         );
         wp_enqueue_script(
             'zibll-pixiv-viewer',
             ZIBLL_PIXIV_URL . 'assets/js/viewer.js',
             array(),
-            ZIBLL_PIXIV_VERSION,
+            ZIBLL_PIXIV_VERSION . '.' . filemtime(ZIBLL_PIXIV_DIR . 'assets/js/viewer.js'),
             true
         );
 
@@ -109,7 +109,10 @@ final class Zibll_Pixiv_Plugin
                 'invalid'        => __('无法识别输入，请粘贴 Pixiv 作品链接或纯数字 ID', 'zibll-pixiv'),
                 'leadingZero'    => __('作品 ID 不能以 0 开头', 'zibll-pixiv'),
                 'invalidPage'    => __('页码格式不正确', 'zibll-pixiv'),
-                'loading'        => __('正在加载图片…', 'zibll-pixiv'),
+                'loadingGallery' => __('已加载 {count} 张，正在加载第 {page} 张…', 'zibll-pixiv'),
+                'paused'         => __('已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。', 'zibll-pixiv'),
+                'limit'          => __('已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。', 'zibll-pixiv'),
+                'imagePage'      => __('第 {page} 张', 'zibll-pixiv'),
                 'network'        => __('网络超时，请检查网络后重试', 'zibll-pixiv'),
                 'badRequest'     => __('作品 ID 格式不正确，请检查后重试', 'zibll-pixiv'),
                 'notFound'       => __('作品不存在、已被删除或限制访问', 'zibll-pixiv'),
@@ -117,14 +120,10 @@ final class Zibll_Pixiv_Plugin
                 'busy'            => __('服务繁忙，请稍后自动重试', 'zibll-pixiv'),
                 'notImage'        => __('未获取到图片', 'zibll-pixiv'),
                 'failed'          => __('暂时无法获取，请稍后再试或切换代理域名', 'zibll-pixiv'),
-                'lastPage'        => __('已到达最后一张', 'zibll-pixiv'),
                 'download'        => __('下载原图', 'zibll-pixiv'),
                 'copy'            => __('复制直链', 'zibll-pixiv'),
                 'copied'          => __('已复制', 'zibll-pixiv'),
                 'retry'           => __('重试', 'zibll-pixiv'),
-                'previous'        => __('上一张', 'zibll-pixiv'),
-                'next'            => __('下一张', 'zibll-pixiv'),
-                'page'            => __('页码', 'zibll-pixiv'),
                 'downloadFallback' => __('浏览器无法直接下载，将在新窗口打开图片。', 'zibll-pixiv'),
             ),
         );

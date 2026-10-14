@@ -10,30 +10,21 @@
     var form = root.querySelector('[data-zibll-pixiv-form]');
     var input = root.querySelector('#zibll-pixiv-input');
     var formError = root.querySelector('[data-zibll-pixiv-form-error]');
-    var result = root.querySelector('[data-zibll-pixiv-result]');
-    var imageWrap = root.querySelector('[data-zibll-pixiv-image-wrap]');
-    var image = root.querySelector('[data-zibll-pixiv-image]');
-    var lightbox = root.querySelector('[data-zibll-pixiv-lightbox]');
-    var toolbar = root.querySelector('[data-zibll-pixiv-toolbar]');
+    var gallery = root.querySelector('[data-zibll-pixiv-gallery]');
+    var cardTemplate = root.querySelector('[data-zibll-pixiv-card-template]');
+    var source = root.querySelector('[data-zibll-pixiv-source]');
+    var empty = root.querySelector('[data-zibll-pixiv-empty]');
     var status = root.querySelector('[data-zibll-pixiv-status]');
-    var pageInput = root.querySelector('[data-zibll-pixiv-page]');
-    var prevButton = root.querySelector('[data-zibll-pixiv-prev]');
-    var nextButton = root.querySelector('[data-zibll-pixiv-next]');
-    var downloadButton = root.querySelector('[data-zibll-pixiv-download]');
-    var copyButton = root.querySelector('[data-zibll-pixiv-copy]');
+    var initialPage = parseInt(root.getAttribute('data-page') || '1', 10) || 1;
     var current = {
         id: root.getAttribute('data-id') || '',
-        page: parseInt(root.getAttribute('data-page') || '1', 10) || 1,
+        startPage: initialPage,
+        nextPage: initialPage,
         userId: '',
-        url: '',
-        filename: '',
-        blob: null,
-        objectUrl: '',
         requestId: 0,
         controller: null,
-        cache: {},
-        loadedPage: 0,
-        retryPage: 0
+        images: [],
+        loading: false
     };
     var maxPages = 50;
 
@@ -43,7 +34,10 @@
         invalid: '无法识别输入，请粘贴 Pixiv 作品链接或纯数字 ID',
         leadingZero: '作品 ID 不能以 0 开头',
         invalidPage: '页码格式不正确',
-        loading: '正在加载图片…',
+        loadingGallery: '已加载 {count} 张，正在加载第 {page} 张…',
+        paused: '已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。',
+        limit: '已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。',
+        imagePage: '第 {page} 张',
         network: '网络超时，请检查网络后重试',
         badRequest: '作品 ID 格式不正确，请检查后重试',
         notFound: '作品不存在、已被删除或限制访问',
@@ -51,14 +45,10 @@
         busy: '服务繁忙，请稍后自动重试',
         notImage: '未获取到图片',
         failed: '暂时无法获取，请稍后再试或切换代理域名',
-        lastPage: '已到达最后一张',
         download: '下载原图',
         copy: '复制直链',
         copied: '已复制',
         retry: '重试',
-        previous: '上一张',
-        next: '下一张',
-        page: '页码',
         downloadFallback: '浏览器无法直接下载，将在新窗口打开图片。'
     };
     Object.keys(fallbackStrings).forEach(function (key) {
@@ -171,6 +161,12 @@
         formError.hidden = !message;
     }
 
+    function galleryMessage(message, page) {
+        return message.replace(/\{count\}/g, String(current.images.length))
+            .replace(/\{page\}/g, String(page))
+            .replace(/\{limit\}/g, String(maxPages));
+    }
+
     function setStatus(message, canRetry) {
         if (!status) {
             return;
@@ -187,34 +183,32 @@
             button.className = 'zibll-pixiv-inline-retry';
             button.textContent = strings.retry;
             button.addEventListener('click', function () {
-                if (current.retryPage > 0) {
-                    current.page = current.retryPage;
-                    current.retryPage = 0;
-                }
-                loadCurrent(true);
+                loadGallery();
             });
             status.appendChild(button);
         }
     }
 
     function setLoading(loading) {
+        current.loading = loading;
         root.classList.toggle('is-loading', loading);
-        if (loading) {
-            setStatus(strings.loading, false);
-            if (!current.blob) {
-                if (toolbar) {
-                    toolbar.hidden = true;
-                }
-                if (imageWrap) {
-                    imageWrap.hidden = true;
-                }
-            }
-        }
     }
 
-    function sleep(milliseconds) {
-        return new Promise(function (resolve) {
-            window.setTimeout(resolve, milliseconds);
+    function sleep(milliseconds, signal) {
+        return new Promise(function (resolve, reject) {
+            if (signal.aborted) {
+                reject({ type: 'aborted' });
+                return;
+            }
+            var timer = window.setTimeout(function () {
+                signal.removeEventListener('abort', cancel);
+                resolve();
+            }, milliseconds);
+            function cancel() {
+                window.clearTimeout(timer);
+                reject({ type: 'aborted' });
+            }
+            signal.addEventListener('abort', cancel, { once: true });
         });
     }
 
@@ -285,22 +279,19 @@
         }
     }
 
-    function revokeCacheObjectUrls(cache) {
-        Object.keys(cache).forEach(function (key) {
-            var entry = cache[key];
-            if (entry && entry.objectUrl) {
-                window.URL.revokeObjectURL(entry.objectUrl);
-                entry.objectUrl = '';
-            }
+    function releaseImages() {
+        current.images.forEach(function (entry) {
+            window.URL.revokeObjectURL(entry.objectUrl);
         });
+        current.images = [];
     }
 
-    async function fetchImage(url, requestId) {
+    async function fetchImage(url, id, page, requestId) {
         var attempts = 0;
         while (attempts < 3) {
             attempts += 1;
             if (requestId !== current.requestId) {
-                throw new Error('aborted');
+                throw { type: 'aborted' };
             }
             var controller = new AbortController();
             current.controller = controller;
@@ -315,14 +306,24 @@
                     signal: controller.signal,
                     cache: 'no-store'
                 });
+                if (requestId !== current.requestId) {
+                    throw { type: 'aborted' };
+                }
+                if (controller.signal.aborted) {
+                    throw { type: 'network' };
+                }
                 if (response.status === 503 && attempts < 3) {
                     var retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+                    retryAfter = Number.isFinite(retryAfter) ? Math.max(1, Math.min(15, retryAfter)) : 2;
                     window.clearTimeout(timer);
-                    if (current.controller === controller) {
-                        current.controller = null;
+                    if (response.body && response.body.cancel) {
+                        await response.body.cancel();
                     }
-                    setStatus(strings.busy + ' ' + Math.max(1, Math.min(15, retryAfter)) + 's', false);
-                    await sleep(Math.max(1, Math.min(15, retryAfter)) * 1000);
+                    if (requestId !== current.requestId) {
+                        throw { type: 'aborted' };
+                    }
+                    setStatus(galleryMessage(strings.loadingGallery, page) + ' ' + strings.busy + ' ' + retryAfter + 's', false);
+                    await sleep(retryAfter * 1000, controller.signal);
                     continue;
                 }
                 if (response.status === 400) {
@@ -341,17 +342,26 @@
                 if (contentType && contentType.indexOf('image/') !== 0) {
                     throw { type: 'notImage' };
                 }
-                var blob = await readBlob(response, requestId);
+                var blob = await readBlob(response, page, requestId);
+                if (requestId !== current.requestId) {
+                    throw { type: 'aborted' };
+                }
+                if (controller.signal.aborted) {
+                    throw { type: 'network' };
+                }
                 if (!blob || (blob.type && blob.type.indexOf('image/') !== 0)) {
                     throw { type: 'notImage' };
                 }
                 return {
                     url: url,
                     blob: blob,
-                    filename: filenameFromDisposition(response.headers.get('Content-Disposition'), current.id, current.page)
+                    filename: filenameFromDisposition(response.headers.get('Content-Disposition'), id, page)
                 };
             } catch (error) {
-                window.clearTimeout(timer);
+                controller.abort();
+                if (requestId !== current.requestId) {
+                    throw { type: 'aborted' };
+                }
                 if (error && error.name === 'AbortError') {
                     throw { type: 'network' };
                 }
@@ -370,7 +380,7 @@
         throw { type: 'failed' };
     }
 
-    async function readBlob(response, requestId) {
+    async function readBlob(response, page, requestId) {
         if (!response.body || !response.body.getReader) {
             return response.blob();
         }
@@ -380,60 +390,41 @@
         var chunks = [];
         while (true) {
             if (requestId !== current.requestId) {
-                throw { type: 'network' };
+                throw { type: 'aborted' };
             }
             var part = await reader.read();
+            if (requestId !== current.requestId) {
+                throw { type: 'aborted' };
+            }
             if (part.done) {
                 break;
             }
             chunks.push(part.value);
             received += part.value.length;
             if (contentLength > 0) {
-                setStatus(strings.loading + ' ' + Math.round((received / contentLength) * 100) + '%', false);
+                setStatus(galleryMessage(strings.loadingGallery, page) + ' ' + Math.round((received / contentLength) * 100) + '%', false);
             }
         }
         return new Blob(chunks, { type: response.headers.get('Content-Type') || 'image/jpeg' });
     }
 
-    async function loadCurrent(force) {
-        if (!current.id) {
-            return;
-        }
-        abortCurrentRequest();
-        current.requestId += 1;
-        var requestId = current.requestId;
-        var key = current.id + ':' + current.page;
-        if (!force && current.cache[key]) {
-            applyImage(current.cache[key]);
-            return;
-        }
-        setLoading(true);
-        setFormError('');
-        var tried = [];
+    async function loadPage(id, page, requestId) {
         var lastError = null;
         var hostList = domains();
         for (var i = 0; i < hostList.length; i += 1) {
-            var candidateUrls = [imageUrl(hostList[i], current.id, current.page, false)];
-            if (current.page === 1) {
-                candidateUrls.push(imageUrl(hostList[i], current.id, current.page, true));
+            var candidateUrls = [imageUrl(hostList[i], id, page, false)];
+            if (page === 1) {
+                candidateUrls.push(imageUrl(hostList[i], id, page, true));
             }
             var stopFailover = false;
             for (var candidateIndex = 0; candidateIndex < candidateUrls.length; candidateIndex += 1) {
                 var url = candidateUrls[candidateIndex];
-                tried.push(url);
                 try {
-                    var resultData = await fetchImage(url, requestId);
-                    if (requestId !== current.requestId) {
-                        return;
-                    }
-                    if (current.cache[key] && current.cache[key].objectUrl) {
-                        window.URL.revokeObjectURL(current.cache[key].objectUrl);
-                        current.cache[key].objectUrl = '';
-                    }
-                    current.cache[key] = resultData;
-                    applyImage(resultData);
-                    return;
+                    return await fetchImage(url, id, page, requestId);
                 } catch (error) {
+                    if (requestId !== current.requestId || (error && error.type === 'aborted')) {
+                        throw { type: 'aborted' };
+                    }
                     if (error && (error.type === 'notFound' || error.type === 'badRequest')) {
                         lastError = error;
                         stopFailover = candidateIndex === 0;
@@ -441,8 +432,11 @@
                     }
                     lastError = error;
                     // Only a network/CORS failure may use the page-one direct variant.
-                    if (candidateIndex === 0 && current.page === 1 && error && error.type === 'network') {
+                    if (candidateIndex === 0 && page === 1 && error && error.type === 'network') {
                         continue;
+                    }
+                    if (!error || (error.type !== 'network' && error.type !== 'server')) {
+                        throw error;
                     }
                     break;
                 }
@@ -451,113 +445,141 @@
                 break;
             }
         }
-        if (requestId !== current.requestId) {
+        throw lastError || { type: 'failed' };
+    }
+
+    async function loadGallery() {
+        if (!current.id || current.loading || current.nextPage > maxPages) {
             return;
         }
-        var failedPage = current.page;
-        if (lastError && lastError.type === 'notFound') {
-            setLoading(false);
-            if (current.loadedPage > 0) {
-                if (current.page !== current.loadedPage) {
-                    current.retryPage = failedPage;
+        var requestId = ++current.requestId;
+        var id = current.id;
+        setLoading(true);
+        setFormError('');
+        if (empty) {
+            empty.hidden = true;
+        }
+        try {
+            while (current.nextPage <= maxPages) {
+                var page = current.nextPage;
+                setStatus(galleryMessage(strings.loadingGallery, page), false);
+                try {
+                    var data = await loadPage(id, page, requestId);
+                    if (requestId !== current.requestId) {
+                        return;
+                    }
+                    appendImage(data, id, page);
+                    current.nextPage += 1;
+                } catch (error) {
+                    if (requestId !== current.requestId) {
+                        return;
+                    }
+                    var message = galleryMessage(strings.paused, page);
+                    if (!error || error.type !== 'notFound' || page === 1) {
+                        message += ' ' + (error && strings[error.type] ? strings[error.type] : strings.failed);
+                    }
+                    setStatus(message, true);
+                    return;
                 }
-                current.page = current.loadedPage;
-                pageInput.value = current.loadedPage;
-                prevButton.disabled = current.loadedPage <= 1;
-                nextButton.disabled = true;
-                root.setAttribute('data-page', String(current.loadedPage));
-                setStatus(strings.lastPage, false);
-            } else if (current.page > 1) {
-                setStatus(strings.lastPage, false);
-                nextButton.disabled = true;
-            } else {
-                setStatus(strings.notFound, true);
             }
-        } else {
-            if (current.loadedPage > 0 && current.page !== current.loadedPage) {
-                current.retryPage = failedPage;
-                current.page = current.loadedPage;
-                pageInput.value = current.loadedPage;
-                prevButton.disabled = current.loadedPage <= 1;
-                nextButton.disabled = current.loadedPage >= maxPages;
-                root.setAttribute('data-page', String(current.loadedPage));
+            setStatus(galleryMessage(strings.limit, maxPages), false);
+        } finally {
+            if (requestId === current.requestId) {
+                setLoading(false);
             }
-            setLoading(false);
-            var message = strings.failed;
-            if (lastError && strings[lastError.type]) {
-                message = strings[lastError.type];
-            }
-            setStatus(message, true);
         }
     }
 
-    function applyImage(data) {
-        if (!data) {
-            return;
-        }
-        setLoading(false);
-        if (!data.objectUrl) {
-            data.objectUrl = window.URL.createObjectURL(data.blob);
-        }
-        current.objectUrl = data.objectUrl;
-        current.url = data.url;
-        current.filename = data.filename;
-        current.blob = data.blob;
-        current.loadedPage = current.page;
-        current.retryPage = 0;
+    function appendImage(data, id, page) {
+        var card = cardTemplate.content.firstElementChild.cloneNode(true);
+        var image = card.querySelector('[data-zibll-pixiv-image]');
+        var lightbox = card.querySelector('[data-zibll-pixiv-lightbox]');
+        var copyButton = card.querySelector('[data-zibll-pixiv-copy]');
+        var cardStatus = card.querySelector('[data-zibll-pixiv-card-status]');
+        data.objectUrl = window.URL.createObjectURL(data.blob);
+        current.images.push(data);
+        card.setAttribute('data-page', String(page));
+        card.querySelector('[data-zibll-pixiv-card-page]').textContent = galleryMessage(strings.imagePage, page);
         image.src = data.objectUrl;
-        image.alt = 'Pixiv artwork ' + current.id + ' page ' + current.page;
+        image.alt = 'Pixiv artwork ' + id + ' page ' + page;
         lightbox.href = data.objectUrl;
-        imageWrap.hidden = false;
-        toolbar.hidden = false;
-        pageInput.value = current.page;
-        prevButton.disabled = current.page <= 1;
-        nextButton.disabled = false;
-        setStatus('', false);
-        root.setAttribute('data-id', current.id);
-        root.setAttribute('data-page', String(current.page));
-        window.history.replaceState({}, '', routeUrl(current.id, current.page, current.userId));
+        lightbox.addEventListener('click', function (event) {
+            if (typeof window.Miniimgbox === 'function' && window._win && window._win.imgbox) {
+                event.preventDefault();
+                if (event.target === lightbox) {
+                    image.click();
+                }
+            }
+        });
+        card.querySelector('[data-zibll-pixiv-download]').addEventListener('click', function () {
+            try {
+                var anchor = document.createElement('a');
+                anchor.href = data.objectUrl;
+                anchor.download = data.filename;
+                anchor.rel = 'noopener';
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+            } catch (error) {
+                cardStatus.textContent = strings.downloadFallback;
+                cardStatus.hidden = false;
+                window.open(data.url, '_blank', 'noopener');
+            }
+        });
+        copyButton.addEventListener('click', function () {
+            var failed = function () {
+                cardStatus.textContent = data.url;
+                cardStatus.hidden = false;
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(data.url).then(function () {
+                    copyButton.textContent = strings.copied;
+                    window.setTimeout(function () {
+                        copyButton.textContent = strings.copy;
+                    }, 1500);
+                }).catch(failed);
+            } else {
+                failed();
+            }
+        });
+        gallery.appendChild(card);
+        gallery.hidden = false;
         if (typeof window.auto_fun === 'function') {
             window.auto_fun();
         }
     }
 
-    function navigateTo(page) {
-        page = Math.max(1, Math.min(maxPages, parseInt(page, 10) || 1));
-        current.page = page;
-        current.retryPage = 0;
-        nextButton.disabled = false;
-        loadCurrent(false);
-    }
-
     function submitParsed(parsed) {
-        var changedArtwork = current.id !== parsed.id;
-        current.id = parsed.id;
-        current.page = parsed.page;
-        current.userId = parsed.userId || '';
-        current.retryPage = 0;
-        if (changedArtwork) {
-            abortCurrentRequest();
-            revokeCacheObjectUrls(current.cache);
-            current.cache = {};
-            current.blob = null;
-            current.loadedPage = 0;
-            current.objectUrl = '';
-            if (imageWrap) {
-                imageWrap.hidden = true;
-            }
-            if (toolbar) {
-                toolbar.hidden = true;
-            }
-        }
-        root.setAttribute('data-id', current.id);
-        root.setAttribute('data-page', String(current.page));
-        input.value = current.id;
         if (root.getAttribute('data-filter-effective') === '1' || config.filterEffective) {
-            window.location.href = routeUrl(current.id, current.page, current.userId);
+            current.requestId += 1;
+            abortCurrentRequest();
+            setLoading(false);
+            window.location.href = routeUrl(parsed.id, parsed.page, parsed.userId);
             return;
         }
-        loadCurrent(true);
+        if (current.id === parsed.id && current.startPage === parsed.page && current.userId === (parsed.userId || '')) {
+            loadGallery();
+            return;
+        }
+        current.requestId += 1;
+        abortCurrentRequest();
+        releaseImages();
+        setLoading(false);
+        gallery.textContent = '';
+        gallery.hidden = true;
+        current.id = parsed.id;
+        current.startPage = parsed.page;
+        current.nextPage = parsed.page;
+        current.userId = parsed.userId || '';
+        root.setAttribute('data-id', current.id);
+        root.setAttribute('data-page', String(current.startPage));
+        input.value = current.id;
+        if (source) {
+            source.href = 'https://www.pixiv.net/artworks/' + encodeURIComponent(current.id);
+            source.parentElement.hidden = false;
+        }
+        window.history.replaceState({}, '', routeUrl(current.id, current.startPage, current.userId));
+        loadGallery();
     }
 
     form.addEventListener('submit', function (event) {
@@ -572,63 +594,13 @@
         submitParsed(parsed);
     });
 
-    prevButton.addEventListener('click', function () {
-        if (current.page > 1) {
-            navigateTo(current.page - 1);
-        }
-    });
-    nextButton.addEventListener('click', function () {
-        if (current.page < maxPages) {
-            navigateTo(current.page + 1);
-        }
-    });
-    pageInput.addEventListener('change', function () {
-        navigateTo(pageInput.value);
-    });
-    downloadButton.addEventListener('click', function () {
-        if (!current.blob || !current.objectUrl) {
-            return;
-        }
-        try {
-            var anchor = document.createElement('a');
-            anchor.href = current.objectUrl;
-            anchor.download = current.filename || (current.id + '_p' + (current.page - 1) + '.jpg');
-            anchor.rel = 'noopener';
-            document.body.appendChild(anchor);
-            anchor.click();
-            anchor.remove();
-        } catch (error) {
-            setStatus(strings.downloadFallback, false);
-            window.open(current.url, '_blank', 'noopener');
-        }
-    });
-    copyButton.addEventListener('click', function () {
-        if (!current.url) {
-            return;
-        }
-        var done = function () {
-            var original = copyButton.textContent;
-            copyButton.textContent = strings.copied;
-            window.setTimeout(function () {
-                copyButton.textContent = original || strings.copy;
-            }, 1500);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(current.url).then(done).catch(function () {
-                setStatus(current.url, false);
-            });
-        } else {
-            setStatus(current.url, false);
-        }
-    });
-
     window.addEventListener('beforeunload', function () {
+        current.requestId += 1;
         abortCurrentRequest();
-        revokeCacheObjectUrls(current.cache);
-        current.objectUrl = '';
+        releaseImages();
     });
 
     if (current.id && root.getAttribute('data-blocked') !== '1') {
-        loadCurrent(false);
+        loadGallery();
     }
 })();

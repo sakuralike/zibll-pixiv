@@ -74,3 +74,15 @@ msgstr "Enter a Pixiv artwork ID or link to preview it in your browser."
 
 msgid "图片由浏览器直接请求第三方代理服务；该服务可能看到您的 IP 地址。本站不接收、不缓存、不落盘图片内容。"
 msgstr "Your browser requests the third-party proxy directly; it may see your IP address. This site does not receive, cache, or store image content."
+
+msgid "已加载 {count} 张，正在加载第 {page} 张…"
+msgstr "Loaded {count} images; loading image {page}…"
+
+msgid "已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。"
+msgstr "Loaded {count} images; image {page} could not be confirmed. You can retry."
+
+msgid "已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。"
+msgstr "Loaded {count} images; reached the safety limit of page {limit}. No further pages were checked."
+
+msgid "第 {page} 张"
+msgstr "Image {page}"
