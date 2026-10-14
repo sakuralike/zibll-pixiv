@@ -102,3 +102,6 @@ msgstr ""
 
 msgid "第 {page} 张"
 msgstr ""
+
+msgid "代理设置"
+msgstr ""

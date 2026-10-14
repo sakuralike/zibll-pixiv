@@ -15,6 +15,8 @@ final class Zibll_Pixiv_Settings
 
     public const VERSION_OPTION = 'zibll_pixiv_version';
 
+    private static bool $csf_registered = false;
+
     /**
      * @return array<string,mixed>
      */
@@ -49,6 +51,181 @@ final class Zibll_Pixiv_Settings
         return wp_parse_args($stored, self::defaults());
     }
 
+    public static function register_csf(): void
+    {
+        if (self::$csf_registered || ! is_admin() || ! current_user_can('manage_options') || ! class_exists('CSF')) {
+            return;
+        }
+
+        self::$csf_registered = true;
+        add_filter('csf_' . self::OPTION_KEY . '_save', array(__CLASS__, 'sanitize_csf'));
+        add_action('csf_options_after', array(__CLASS__, 'render_csf_tools'));
+
+        CSF::createOptions(
+            self::OPTION_KEY,
+            array(
+                'menu_title'         => __('Zibll Pixiv', 'zibll-pixiv'),
+                'menu_slug'          => 'zibll-pixiv',
+                'menu_type'          => 'submenu',
+                'menu_parent'        => 'options-general.php',
+                'menu_capability'    => 'manage_options',
+                'framework_title'   => __('Zibll Pixiv', 'zibll-pixiv'),
+                'theme'             => 'light',
+                'show_bar_menu'      => false,
+                'show_sub_menu'      => false,
+                'show_in_network'    => false,
+                'show_in_customizer' => false,
+                'show_reset_all'     => false,
+                'show_reset_section' => false,
+                'show_all_options'   => false,
+                'show_search'        => false,
+                'save_defaults'      => false,
+                'ajax_save'          => false,
+                'footer_credit'      => ' ',
+                'defaults'           => self::defaults(),
+            )
+        );
+
+        CSF::createSection(
+            self::OPTION_KEY,
+            array(
+                'title'       => __('查看器设置', 'zibll-pixiv'),
+                'icon'        => 'fa fa-fw fa-picture-o',
+                'description' => esc_html__('配置独立查看器、代理域名和按 ID 精确匹配的本地屏蔽清单。插件不会把图片经由服务器中转。', 'zibll-pixiv'),
+                'fields'      => array(
+                    array(
+                        'id'    => 'slug',
+                        'type'  => 'text',
+                        'title' => __('独立页面 slug', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'    => 'page_title',
+                        'type'  => 'text',
+                        'title' => __('页面标题', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'    => 'disclaimer',
+                        'type'  => 'textarea',
+                        'title' => __('免责声明文案', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'    => 'contact',
+                        'type'  => 'textarea',
+                        'title' => __('版权方联系方式', 'zibll-pixiv'),
+                    ),
+                ),
+            )
+        );
+
+        CSF::createSection(
+            self::OPTION_KEY,
+            array(
+                'title'  => __('代理设置', 'zibll-pixiv'),
+                'icon'   => 'fa fa-fw fa-exchange',
+                'fields' => array(
+                    array(
+                        'id'      => 'primary_domain',
+                        'type'    => 'select',
+                        'title'   => __('主代理域名', 'zibll-pixiv'),
+                        'options' => array('pixiv.re' => 'pixiv.re', 'pixiv.nl' => 'pixiv.nl'),
+                    ),
+                    array(
+                        'id'      => 'backup_domain',
+                        'type'    => 'select',
+                        'title'   => __('备用代理域名', 'zibll-pixiv'),
+                        'options' => array('pixiv.re' => 'pixiv.re', 'pixiv.nl' => 'pixiv.nl'),
+                    ),
+                    array(
+                        'id'    => 'failover',
+                        'type'  => 'switcher',
+                        'title' => __('自动故障转移', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'         => 'timeout',
+                        'type'       => 'number',
+                        'title'      => __('请求超时（秒）', 'zibll-pixiv'),
+                        'attributes' => array('min' => 3, 'max' => 30, 'step' => 1),
+                    ),
+                ),
+            )
+        );
+
+        CSF::createSection(
+            self::OPTION_KEY,
+            array(
+                'title'       => __('ID 屏蔽状态', 'zibll-pixiv'),
+                'icon'        => 'fa fa-fw fa-shield',
+                'description' => esc_html__('该功能只按管理员维护的作品 ID / 画师 ID 精确匹配，不是自动内容识别。', 'zibll-pixiv'),
+                'fields'      => array(
+                    array(
+                        'id'    => 'filter_enabled',
+                        'type'  => 'switcher',
+                        'title' => __('ID 屏蔽清单开关', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'         => 'blocklist',
+                        'type'       => 'textarea',
+                        'title'      => __('屏蔽清单内容', 'zibll-pixiv'),
+                        'attributes' => array('rows' => 8),
+                        'desc'       => esc_html__('每行一个作品 ID 或 user:画师ID；支持 # 注释。清单不会输出到访客页面。', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'    => 'record_blocked',
+                        'type'  => 'switcher',
+                        'title' => __('记录被屏蔽 ID', 'zibll-pixiv'),
+                    ),
+                    array(
+                        'id'    => 'blocked_message',
+                        'type'  => 'text',
+                        'title' => __('命中后的提示文案', 'zibll-pixiv'),
+                    ),
+                ),
+            )
+        );
+    }
+
+    public static function sanitize_csf($input): array
+    {
+        if (! current_user_can('manage_options')) {
+            wp_die(esc_html__('无权限执行该操作。', 'zibll-pixiv'), '', array('response' => 403));
+        }
+
+        return self::sanitize($input);
+    }
+
+    public static function render_csf_tools(): void
+    {
+        $screen = get_current_screen();
+        if (! self::$csf_registered || ! current_user_can('manage_options') || ! $screen || $screen->id !== 'settings_page_zibll-pixiv') {
+            return;
+        }
+
+        $status = self::blocklist_status();
+        ?>
+        <div class="wrap csf csf-theme-light">
+            <div class="csf-container">
+                <div class="csf-field">
+                    <div class="csf-title"><h4><?php echo esc_html__('ID 屏蔽状态', 'zibll-pixiv'); ?></h4></div>
+                    <div class="csf-fieldset"><strong><?php echo esc_html($status['label']); ?></strong></div>
+                    <div class="clear"></div>
+                </div>
+                <div class="csf-field">
+                    <div class="csf-title"><h4><?php echo esc_html__('重建伪静态', 'zibll-pixiv'); ?></h4></div>
+                    <div class="csf-fieldset">
+                        <form action="<?php echo esc_url(admin_url('admin-post.php')); ?>" method="post">
+                            <input type="hidden" name="action" value="zibll_pixiv_flush_rewrite" />
+                            <?php wp_nonce_field('zibll_pixiv_flush_rewrite'); ?>
+                            <?php submit_button(__('重建伪静态', 'zibll-pixiv'), 'secondary', 'submit', false); ?>
+                        </form>
+                        <p class="csf-text-desc"><?php echo esc_html__('如果独立页面返回 404，请确认 nginx 已将未命中路径交给 WordPress index.php。', 'zibll-pixiv'); ?></p>
+                    </div>
+                    <div class="clear"></div>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
     /**
      * Add the WordPress settings page.
      */
@@ -63,6 +240,10 @@ final class Zibll_Pixiv_Settings
                 'default'           => self::defaults(),
             )
         );
+
+        if (self::$csf_registered) {
+            return;
+        }
 
         add_settings_section(
             'zibll_pixiv_main',
@@ -103,6 +284,10 @@ final class Zibll_Pixiv_Settings
      */
     public static function add_menu(): void
     {
+        if (self::$csf_registered) {
+            return;
+        }
+
         add_options_page(
             __('Zibll Pixiv', 'zibll-pixiv'),
             __('Zibll Pixiv', 'zibll-pixiv'),

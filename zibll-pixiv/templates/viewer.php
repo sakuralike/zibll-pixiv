@@ -46,67 +46,69 @@ if (! $embedded && function_exists('get_header')) {
     data-blocked="<?php echo $blocked ? '1' : '0'; ?>"
     data-filter-effective="<?php echo ! empty($filter_status['effective']) ? '1' : '0'; ?>"
 >
-    <header class="zibll-pixiv-header">
-        <h1><?php echo esc_html($options['page_title']); ?></h1>
-        <p class="zibll-pixiv-subtitle"><?php echo esc_html__('输入 Pixiv 作品 ID 或作品链接，直接在浏览器中预览。', 'zibll-pixiv'); ?></p>
-    </header>
+    <section class="zib-widget box-body">
+        <header class="zibll-pixiv-header">
+            <h1 class="title-h-left em12"><?php echo esc_html($options['page_title']); ?></h1>
+            <p class="zibll-pixiv-subtitle muted-color"><?php echo esc_html__('输入 Pixiv 作品 ID 或作品链接，直接在浏览器中预览。', 'zibll-pixiv'); ?></p>
+        </header>
 
-    <form class="zibll-pixiv-form" data-zibll-pixiv-form novalidate>
-        <label for="zibll-pixiv-input" class="screen-reader-text"><?php echo esc_html__('Pixiv 作品 ID 或链接', 'zibll-pixiv'); ?></label>
-        <input
-            id="zibll-pixiv-input"
-            class="zibll-pixiv-input"
-            type="text"
-            name="zibll_pixiv_input"
-            inputmode="url"
-            autocomplete="off"
-            placeholder="<?php echo esc_attr__('例如：82775556 或 Pixiv 作品链接', 'zibll-pixiv'); ?>"
-            value="<?php echo esc_attr($id); ?>"
-        />
-        <button class="zibll-pixiv-submit" type="submit"><?php echo esc_html__('查看图片', 'zibll-pixiv'); ?></button>
-    </form>
-    <p class="zibll-pixiv-form-error" data-zibll-pixiv-form-error role="alert"<?php echo $initial_message === '' ? ' hidden' : ''; ?>>
-        <?php echo esc_html($initial_message); ?>
-    </p>
+        <form class="zibll-pixiv-form" data-zibll-pixiv-form novalidate>
+            <label for="zibll-pixiv-input" class="screen-reader-text"><?php echo esc_html__('Pixiv 作品 ID 或链接', 'zibll-pixiv'); ?></label>
+            <input
+                id="zibll-pixiv-input"
+                class="zibll-pixiv-input form-control"
+                type="text"
+                name="zibll_pixiv_input"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="<?php echo esc_attr__('例如：82775556 或 Pixiv 作品链接', 'zibll-pixiv'); ?>"
+                value="<?php echo esc_attr($id); ?>"
+            />
+            <button class="zibll-pixiv-submit but b-theme pw-1em" type="submit"><?php echo esc_html__('查看图片', 'zibll-pixiv'); ?></button>
+        </form>
+        <p class="zibll-pixiv-form-error muted-box c-red" data-zibll-pixiv-form-error role="alert"<?php echo $initial_message === '' ? ' hidden' : ''; ?>>
+            <?php echo esc_html($initial_message); ?>
+        </p>
+    </section>
 
     <section class="zibll-pixiv-result" data-zibll-pixiv-result aria-live="polite">
         <?php if ($blocked) : ?>
-            <div class="zibll-pixiv-notice zibll-pixiv-notice--blocked" data-zibll-pixiv-blocked>
+            <div class="zibll-pixiv-notice zibll-pixiv-notice--blocked muted-box c-red" data-zibll-pixiv-blocked>
                 <strong><?php echo esc_html($context['blocked_message']); ?></strong>
             </div>
         <?php elseif ($id === '') : ?>
-            <div class="zibll-pixiv-empty" data-zibll-pixiv-empty>
+            <div class="zibll-pixiv-empty zib-widget box-body muted-color" data-zibll-pixiv-empty>
                 <?php echo esc_html__('提交作品 ID 后将在此处显示图片。', 'zibll-pixiv'); ?>
             </div>
         <?php endif; ?>
 
         <div class="zibll-pixiv-gallery" data-zibll-pixiv-gallery hidden></div>
         <template data-zibll-pixiv-card-template>
-            <article class="zibll-pixiv-card" data-zibll-pixiv-card>
-                <h2 class="zibll-pixiv-card-title" data-zibll-pixiv-card-page></h2>
+            <article class="zibll-pixiv-card zib-widget box-body" data-zibll-pixiv-card>
+                <h2 class="zibll-pixiv-card-title muted-color" data-zibll-pixiv-card-page></h2>
                 <div class="zibll-pixiv-image-wrap">
                     <a class="imgbox-container" data-imgbox data-zibll-pixiv-lightbox href="" target="_blank" rel="noopener">
                         <img class="zibll-pixiv-image" data-zibll-pixiv-image loading="lazy" alt="" />
                     </a>
                 </div>
                 <div class="zibll-pixiv-toolbar">
-                    <button type="button" class="zibll-pixiv-button zibll-pixiv-button--accent" data-zibll-pixiv-download><?php echo esc_html__('下载原图', 'zibll-pixiv'); ?></button>
-                    <button type="button" class="zibll-pixiv-button" data-zibll-pixiv-copy><?php echo esc_html__('复制直链', 'zibll-pixiv'); ?></button>
+                    <button type="button" class="zibll-pixiv-button zibll-pixiv-button--accent but b-theme" data-zibll-pixiv-download><?php echo esc_html__('下载原图', 'zibll-pixiv'); ?></button>
+                    <button type="button" class="zibll-pixiv-button but c-theme" data-zibll-pixiv-copy><?php echo esc_html__('复制直链', 'zibll-pixiv'); ?></button>
                 </div>
-                <p class="zibll-pixiv-card-status" data-zibll-pixiv-card-status hidden></p>
+                <p class="zibll-pixiv-card-status muted-color" data-zibll-pixiv-card-status hidden></p>
             </article>
         </template>
-        <p class="zibll-pixiv-status" data-zibll-pixiv-status role="status"></p>
+        <p class="zibll-pixiv-status muted-color" data-zibll-pixiv-status role="status"></p>
     </section>
 
     <p class="zibll-pixiv-source"<?php echo $id === '' ? ' hidden' : ''; ?>>
-        <a data-zibll-pixiv-source href="<?php echo $id !== '' ? esc_url('https://www.pixiv.net/artworks/' . rawurlencode($id)) : ''; ?>" target="_blank" rel="noopener noreferrer">
+        <a class="focus-color" data-zibll-pixiv-source href="<?php echo $id !== '' ? esc_url('https://www.pixiv.net/artworks/' . rawurlencode($id)) : ''; ?>" target="_blank" rel="noopener noreferrer">
             <?php echo esc_html__('在 Pixiv 查看原作品', 'zibll-pixiv'); ?>
         </a>
     </p>
 
-    <aside class="zibll-pixiv-compliance">
-        <h2><?php echo esc_html__('使用说明与版权提示', 'zibll-pixiv'); ?></h2>
+    <aside class="zibll-pixiv-compliance zib-widget box-body muted-color">
+        <h2 class="title-h-left em12"><?php echo esc_html__('使用说明与版权提示', 'zibll-pixiv'); ?></h2>
         <div class="zibll-pixiv-disclaimer"><?php echo wp_kses_post(wpautop($options['disclaimer'])); ?></div>
         <p><?php echo esc_html__('图片由浏览器直接请求第三方代理服务；该服务可能看到您的 IP 地址。本站不接收、不缓存、不落盘图片内容。', 'zibll-pixiv'); ?></p>
         <?php if (trim((string) $options['contact']) !== '') : ?>

@@ -86,3 +86,6 @@ msgstr "{count} 枚読み込み済み。安全上限の {limit} ページに達�
 
 msgid "第 {page} 张"
 msgstr "{page} 枚目"
+
+msgid "代理设置"
+msgstr "プロキシ設定"

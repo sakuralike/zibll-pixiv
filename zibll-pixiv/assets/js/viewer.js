@@ -180,7 +180,7 @@
         if (canRetry) {
             var button = document.createElement('button');
             button.type = 'button';
-            button.className = 'zibll-pixiv-inline-retry';
+            button.className = 'zibll-pixiv-inline-retry but c-theme';
             button.textContent = strings.retry;
             button.addEventListener('click', function () {
                 loadGallery();

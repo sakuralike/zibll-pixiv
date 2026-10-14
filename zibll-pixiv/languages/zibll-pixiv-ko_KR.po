@@ -86,3 +86,6 @@ msgstr "{count}장 로드됨. 안전 상한인 {limit}페이지에 도달하여 
 
 msgid "第 {page} 张"
 msgstr "{page}번째 이미지"
+
+msgid "代理设置"
+msgstr "프록시 설정"

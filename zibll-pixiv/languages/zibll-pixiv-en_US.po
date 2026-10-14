@@ -86,3 +86,6 @@ msgstr "Loaded {count} images; reached the safety limit of page {limit}. No furt
 
 msgid "第 {page} 张"
 msgstr "Image {page}"
+
+msgid "代理设置"
+msgstr "Proxy Settings"

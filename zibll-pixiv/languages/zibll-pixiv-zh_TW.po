@@ -86,3 +86,6 @@ msgstr "已載入 {count} 張，已達到第 {limit} 頁安全上限，未繼續
 
 msgid "第 {page} 张"
 msgstr "第 {page} 張"
+
+msgid "代理设置"
+msgstr "代理設定"

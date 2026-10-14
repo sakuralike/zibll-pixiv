@@ -33,6 +33,7 @@ final class Zibll_Pixiv_Plugin
         add_action('init', array($this, 'register_shortcode'), 20);
         add_action('rest_api_init', array('Zibll_Pixiv_Rest_Api', 'register'));
 
+        add_action('after_setup_theme', array('Zibll_Pixiv_Settings', 'register_csf'), 20);
         add_action('admin_init', array('Zibll_Pixiv_Settings', 'register'));
         add_action('admin_menu', array('Zibll_Pixiv_Settings', 'add_menu'));
         add_action('admin_post_zibll_pixiv_flush_rewrite', array('Zibll_Pixiv_Settings', 'flush_rewrite_action'));

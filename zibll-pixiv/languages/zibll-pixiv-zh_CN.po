@@ -102,3 +102,6 @@ msgstr "已加载 {count} 张，已达到第 {limit} 页安全上限，未继续
 
 msgid "第 {page} 张"
 msgstr "第 {page} 张"
+
+msgid "代理设置"
+msgstr "代理设置"
