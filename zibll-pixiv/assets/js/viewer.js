@@ -32,7 +32,8 @@
         requestId: 0,
         controller: null,
         cache: {},
-        loadedPage: 0
+        loadedPage: 0,
+        retryPage: 0
     };
     var maxPages = 50;
 
@@ -186,6 +187,10 @@
             button.className = 'zibll-pixiv-inline-retry';
             button.textContent = strings.retry;
             button.addEventListener('click', function () {
+                if (current.retryPage > 0) {
+                    current.page = current.retryPage;
+                    current.retryPage = 0;
+                }
                 loadCurrent(true);
             });
             status.appendChild(button);
@@ -280,6 +285,16 @@
         }
     }
 
+    function revokeCacheObjectUrls(cache) {
+        Object.keys(cache).forEach(function (key) {
+            var entry = cache[key];
+            if (entry && entry.objectUrl) {
+                window.URL.revokeObjectURL(entry.objectUrl);
+                entry.objectUrl = '';
+            }
+        });
+    }
+
     async function fetchImage(url, requestId) {
         var attempts = 0;
         while (attempts < 3) {
@@ -300,10 +315,12 @@
                     signal: controller.signal,
                     cache: 'no-store'
                 });
-                window.clearTimeout(timer);
-                current.controller = null;
                 if (response.status === 503 && attempts < 3) {
                     var retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+                    window.clearTimeout(timer);
+                    if (current.controller === controller) {
+                        current.controller = null;
+                    }
                     setStatus(strings.busy + ' ' + Math.max(1, Math.min(15, retryAfter)) + 's', false);
                     await sleep(Math.max(1, Math.min(15, retryAfter)) * 1000);
                     continue;
@@ -335,7 +352,6 @@
                 };
             } catch (error) {
                 window.clearTimeout(timer);
-                current.controller = null;
                 if (error && error.name === 'AbortError') {
                     throw { type: 'network' };
                 }
@@ -344,6 +360,11 @@
                 }
                 // A CORS redirect commonly surfaces as a bare TypeError.
                 throw { type: 'network' };
+            } finally {
+                window.clearTimeout(timer);
+                if (current.controller === controller) {
+                    current.controller = null;
+                }
             }
         }
         throw { type: 'failed' };
@@ -378,14 +399,14 @@
         if (!current.id) {
             return;
         }
+        abortCurrentRequest();
+        current.requestId += 1;
+        var requestId = current.requestId;
         var key = current.id + ':' + current.page;
         if (!force && current.cache[key]) {
             applyImage(current.cache[key]);
             return;
         }
-        abortCurrentRequest();
-        current.requestId += 1;
-        var requestId = current.requestId;
         setLoading(true);
         setFormError('');
         var tried = [];
@@ -404,6 +425,10 @@
                     var resultData = await fetchImage(url, requestId);
                     if (requestId !== current.requestId) {
                         return;
+                    }
+                    if (current.cache[key] && current.cache[key].objectUrl) {
+                        window.URL.revokeObjectURL(current.cache[key].objectUrl);
+                        current.cache[key].objectUrl = '';
                     }
                     current.cache[key] = resultData;
                     applyImage(resultData);
@@ -429,13 +454,18 @@
         if (requestId !== current.requestId) {
             return;
         }
+        var failedPage = current.page;
         if (lastError && lastError.type === 'notFound') {
             setLoading(false);
             if (current.loadedPage > 0) {
+                if (current.page !== current.loadedPage) {
+                    current.retryPage = failedPage;
+                }
                 current.page = current.loadedPage;
                 pageInput.value = current.loadedPage;
                 prevButton.disabled = current.loadedPage <= 1;
                 nextButton.disabled = true;
+                root.setAttribute('data-page', String(current.loadedPage));
                 setStatus(strings.lastPage, false);
             } else if (current.page > 1) {
                 setStatus(strings.lastPage, false);
@@ -444,6 +474,14 @@
                 setStatus(strings.notFound, true);
             }
         } else {
+            if (current.loadedPage > 0 && current.page !== current.loadedPage) {
+                current.retryPage = failedPage;
+                current.page = current.loadedPage;
+                pageInput.value = current.loadedPage;
+                prevButton.disabled = current.loadedPage <= 1;
+                nextButton.disabled = current.loadedPage >= maxPages;
+                root.setAttribute('data-page', String(current.loadedPage));
+            }
             setLoading(false);
             var message = strings.failed;
             if (lastError && strings[lastError.type]) {
@@ -458,9 +496,6 @@
             return;
         }
         setLoading(false);
-        if (current.objectUrl && current.objectUrl !== data.objectUrl) {
-            window.URL.revokeObjectURL(current.objectUrl);
-        }
         if (!data.objectUrl) {
             data.objectUrl = window.URL.createObjectURL(data.blob);
         }
@@ -469,6 +504,7 @@
         current.filename = data.filename;
         current.blob = data.blob;
         current.loadedPage = current.page;
+        current.retryPage = 0;
         image.src = data.objectUrl;
         image.alt = 'Pixiv artwork ' + current.id + ' page ' + current.page;
         lightbox.href = data.objectUrl;
@@ -489,6 +525,7 @@
     function navigateTo(page) {
         page = Math.max(1, Math.min(maxPages, parseInt(page, 10) || 1));
         current.page = page;
+        current.retryPage = 0;
         nextButton.disabled = false;
         loadCurrent(false);
     }
@@ -498,15 +535,14 @@
         current.id = parsed.id;
         current.page = parsed.page;
         current.userId = parsed.userId || '';
-        current.cache = {};
+        current.retryPage = 0;
         if (changedArtwork) {
             abortCurrentRequest();
+            revokeCacheObjectUrls(current.cache);
+            current.cache = {};
             current.blob = null;
             current.loadedPage = 0;
-            if (current.objectUrl) {
-                window.URL.revokeObjectURL(current.objectUrl);
-                current.objectUrl = '';
-            }
+            current.objectUrl = '';
             if (imageWrap) {
                 imageWrap.hidden = true;
             }
@@ -588,14 +624,8 @@
 
     window.addEventListener('beforeunload', function () {
         abortCurrentRequest();
-        Object.keys(current.cache).forEach(function (key) {
-            if (current.cache[key].objectUrl) {
-                window.URL.revokeObjectURL(current.cache[key].objectUrl);
-            }
-        });
-        if (current.objectUrl) {
-            window.URL.revokeObjectURL(current.objectUrl);
-        }
+        revokeCacheObjectUrls(current.cache);
+        current.objectUrl = '';
     });
 
     if (current.id && root.getAttribute('data-blocked') !== '1') {
