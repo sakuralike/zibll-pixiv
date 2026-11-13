@@ -61,6 +61,11 @@ final class Zibll_Pixiv_Id_Parser
                         $page = (int) $match[2];
                     }
                 }
+            } elseif (in_array($host, array('i.pixiv.re', 'i.pixiv.nl'), true)) {
+                if (preg_match('~([1-9]\d{0,11})_p(\d+)\.[a-z0-9]+/?$~i', $path, $match)) {
+                    $id = $match[1];
+                    $page = (int) $match[2] + 1;
+                }
             } elseif (preg_match(
                 '~^/users?/(\d+)/(?:artworks?|illustrations?)/(\d+)/?$~i',
                 $path,
@@ -122,7 +127,7 @@ final class Zibll_Pixiv_Id_Parser
     }
 
     /**
-     * Build a proxy URL after validating the domain and identifiers.
+     * Build one legacy ID-based proxy URL.
      */
     public static function build_proxy_url(string $domain, string $id, int $page = 1): string
     {
@@ -204,6 +209,6 @@ final class Zibll_Pixiv_Id_Parser
 
     private static function allowed_host(string $host): bool
     {
-        return in_array($host, array('pixiv.net', 'www.pixiv.net', 'pixiv.re', 'pixiv.nl'), true);
+        return in_array($host, array('pixiv.net', 'www.pixiv.net', 'pixiv.re', 'pixiv.nl', 'i.pixiv.re', 'i.pixiv.nl'), true);
     }
 }

@@ -84,6 +84,9 @@ msgstr "Loaded {count} images; image {page} could not be confirmed. You can retr
 msgid "已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。"
 msgstr "Loaded {count} images; reached the safety limit of page {limit}. No further pages were checked."
 
+msgid "已加载 {count} 张，共 {total} 张。"
+msgstr "Loaded {count} images, {total} in total."
+
 msgid "第 {page} 张"
 msgstr "Image {page}"
 

@@ -99,6 +99,7 @@ final class Zibll_Pixiv_Plugin
 
         $context = array(
             'baseUrl'          => Zibll_Pixiv_Rewrite::base_url(),
+            'resolverUrl'      => rest_url('zibll-pixiv/v1/artwork/'),
             'prettyPermalinks' => (bool) get_option('permalink_structure'),
             'primaryDomain'    => Zibll_Pixiv_Request_Policy::normalize_domain($options['primary_domain'], 'pixiv.re'),
             'backupDomain'     => Zibll_Pixiv_Request_Policy::normalize_domain($options['backup_domain'], 'pixiv.nl'),
@@ -113,6 +114,7 @@ final class Zibll_Pixiv_Plugin
                 'loadingGallery' => __('已加载 {count} 张，正在加载第 {page} 张…', 'zibll-pixiv'),
                 'paused'         => __('已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。', 'zibll-pixiv'),
                 'limit'          => __('已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。', 'zibll-pixiv'),
+                'complete'       => __('已加载 {count} 张，共 {total} 张。', 'zibll-pixiv'),
                 'imagePage'      => __('第 {page} 张', 'zibll-pixiv'),
                 'network'        => __('网络超时，请检查网络后重试', 'zibll-pixiv'),
                 'badRequest'     => __('作品 ID 格式不正确，请检查后重试', 'zibll-pixiv'),

@@ -23,6 +23,8 @@
         userId: '',
         requestId: 0,
         controller: null,
+        cancelImage: null,
+        pages: null,
         images: [],
         loading: false
     };
@@ -37,6 +39,7 @@
         loadingGallery: '已加载 {count} 张，正在加载第 {page} 张…',
         paused: '已加载 {count} 张，暂时无法确认第 {page} 张是否存在，可重试。',
         limit: '已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。',
+        complete: '已加载 {count} 张，共 {total} 张。',
         imagePage: '第 {page} 张',
         network: '网络超时，请检查网络后重试',
         badRequest: '作品 ID 格式不正确，请检查后重试',
@@ -49,7 +52,6 @@
         copy: '复制直链',
         copied: '已复制',
         retry: '重试',
-        downloadFallback: '浏览器无法直接下载，将在新窗口打开图片。'
     };
     Object.keys(fallbackStrings).forEach(function (key) {
         if (!strings[key]) {
@@ -89,7 +91,7 @@
         }
 
         var host = url.hostname.toLowerCase();
-        if (['pixiv.net', 'www.pixiv.net', 'pixiv.re', 'pixiv.nl'].indexOf(host) === -1) {
+        if (['pixiv.net', 'www.pixiv.net', 'pixiv.re', 'pixiv.nl', 'i.pixiv.re', 'i.pixiv.nl'].indexOf(host) === -1) {
             return { error: 'unrecognized' };
         }
 
@@ -109,10 +111,19 @@
                 id = proxy[1];
                 page = proxy[2] ? parseInt(proxy[2], 10) : 1;
             }
+        } else if (host === 'i.pixiv.re' || host === 'i.pixiv.nl') {
+            var original = url.pathname.match(/\/([1-9]\d{0,11})_p(\d+)\.[a-z0-9]+\/?$/i);
+            if (original) {
+                id = original[1];
+                page = parseInt(original[2], 10) + 1;
+            }
         } else if (host.indexOf('pixiv.net') !== -1 && url.searchParams.get('illust_id')) {
             id = url.searchParams.get('illust_id');
         }
-        if (!id && (host === 'pixiv.re' || host === 'pixiv.nl' || host.indexOf('pixiv.net') !== -1)) {
+        if (!id && (
+            ['pixiv.re', 'pixiv.nl', 'i.pixiv.re', 'i.pixiv.nl'].indexOf(host) !== -1
+            || host.indexOf('pixiv.net') !== -1
+        )) {
             return { error: 'invalid' };
         }
 
@@ -161,9 +172,10 @@
         formError.hidden = !message;
     }
 
-    function galleryMessage(message, page) {
+    function galleryMessage(message, page, total) {
         return message.replace(/\{count\}/g, String(current.images.length))
             .replace(/\{page\}/g, String(page))
+            .replace(/\{total\}/g, String(total || 0))
             .replace(/\{limit\}/g, String(maxPages));
     }
 
@@ -194,40 +206,6 @@
         root.classList.toggle('is-loading', loading);
     }
 
-    function sleep(milliseconds, signal) {
-        return new Promise(function (resolve, reject) {
-            if (signal.aborted) {
-                reject({ type: 'aborted' });
-                return;
-            }
-            var timer = window.setTimeout(function () {
-                signal.removeEventListener('abort', cancel);
-                resolve();
-            }, milliseconds);
-            function cancel() {
-                window.clearTimeout(timer);
-                reject({ type: 'aborted' });
-            }
-            signal.addEventListener('abort', cancel, { once: true });
-        });
-    }
-
-    function domains() {
-        var list = [];
-        if (config.primaryDomain) {
-            list.push(config.primaryDomain);
-        }
-        if (config.failover && config.backupDomain && list.indexOf(config.backupDomain) === -1) {
-            list.push(config.backupDomain);
-        }
-        return list;
-    }
-
-    function imageUrl(domain, id, page, directFirstPage) {
-        var suffix = page > 1 ? '-' + page : (directFirstPage ? '-1' : '');
-        return 'https://' + domain + '/' + encodeURIComponent(id) + suffix + '.jpg';
-    }
-
     function routeUrl(id, page, userId) {
         if (config.prettyPermalinks === false) {
             var query = {
@@ -255,201 +233,78 @@
         return targetUrl;
     }
 
-    function filenameFromDisposition(value, id, page) {
-        var fallback = id + '_p' + (page - 1) + '.jpg';
-        if (!value) {
-            return fallback;
-        }
-        var match = value.match(/filename\*?=(?:UTF-8''|["']?)([^;"']+)/i);
-        if (!match) {
-            return fallback;
-        }
-        try {
-            var filename = decodeURIComponent(match[1].replace(/^["']|["']$/g, ''));
-            return /^[\w.\- ()]+$/u.test(filename) ? filename : fallback;
-        } catch (error) {
-            return fallback;
-        }
-    }
-
     function abortCurrentRequest() {
         if (current.controller) {
             current.controller.abort();
             current.controller = null;
         }
+        if (current.cancelImage) {
+            current.cancelImage();
+            current.cancelImage = null;
+        }
     }
 
     function releaseImages() {
         current.images.forEach(function (entry) {
-            window.URL.revokeObjectURL(entry.objectUrl);
+            entry.card.remove();
         });
         current.images = [];
     }
 
-    async function fetchImage(url, id, page, requestId) {
-        var attempts = 0;
-        while (attempts < 3) {
-            attempts += 1;
+    async function resolveArtwork(id, requestId) {
+        var controller = new AbortController();
+        current.controller = controller;
+        var timer = window.setTimeout(function () {
+            controller.abort();
+        }, Number(config.timeout || 15000));
+        try {
+            var response = await fetch(config.resolverUrl + encodeURIComponent(id), {
+                method: 'GET',
+                credentials: 'same-origin',
+                signal: controller.signal,
+                cache: 'no-store'
+            });
             if (requestId !== current.requestId) {
                 throw { type: 'aborted' };
             }
-            var controller = new AbortController();
-            current.controller = controller;
-            var timer = window.setTimeout(function () {
-                controller.abort();
-            }, Number(config.timeout || 15000));
-            try {
-                var response = await fetch(url, {
-                    method: 'GET',
-                    mode: 'cors',
-                    credentials: 'omit',
-                    signal: controller.signal,
-                    cache: 'no-store'
-                });
-                if (requestId !== current.requestId) {
-                    throw { type: 'aborted' };
-                }
-                if (controller.signal.aborted) {
-                    throw { type: 'network' };
-                }
-                if (response.status === 503 && attempts < 3) {
-                    var retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
-                    retryAfter = Number.isFinite(retryAfter) ? Math.max(1, Math.min(15, retryAfter)) : 2;
-                    window.clearTimeout(timer);
-                    if (response.body && response.body.cancel) {
-                        await response.body.cancel();
-                    }
-                    if (requestId !== current.requestId) {
-                        throw { type: 'aborted' };
-                    }
-                    setStatus(galleryMessage(strings.loadingGallery, page) + ' ' + strings.busy + ' ' + retryAfter + 's', false);
-                    await sleep(retryAfter * 1000, controller.signal);
-                    continue;
-                }
-                if (response.status === 400) {
-                    throw { type: 'badRequest' };
-                }
+            if (!response.ok) {
                 if (response.status === 404) {
                     throw { type: 'notFound' };
+                }
+                if (response.status === 429) {
+                    throw { type: 'busy' };
                 }
                 if (response.status >= 500) {
                     throw { type: 'server' };
                 }
-                if (!response.ok) {
-                    throw { type: 'failed' };
-                }
-                var contentType = (response.headers.get('Content-Type') || '').toLowerCase();
-                if (contentType && contentType.indexOf('image/') !== 0) {
-                    throw { type: 'notImage' };
-                }
-                var blob = await readBlob(response, page, requestId);
-                if (requestId !== current.requestId) {
-                    throw { type: 'aborted' };
-                }
-                if (controller.signal.aborted) {
-                    throw { type: 'network' };
-                }
-                if (!blob || (blob.type && blob.type.indexOf('image/') !== 0)) {
-                    throw { type: 'notImage' };
-                }
-                return {
-                    url: url,
-                    blob: blob,
-                    filename: filenameFromDisposition(response.headers.get('Content-Disposition'), id, page)
-                };
-            } catch (error) {
-                controller.abort();
-                if (requestId !== current.requestId) {
-                    throw { type: 'aborted' };
-                }
-                if (error && error.name === 'AbortError') {
-                    throw { type: 'network' };
-                }
-                if (error && error.type) {
-                    throw error;
-                }
-                // A CORS redirect commonly surfaces as a bare TypeError.
-                throw { type: 'network' };
-            } finally {
-                window.clearTimeout(timer);
-                if (current.controller === controller) {
-                    current.controller = null;
-                }
+                throw { type: 'failed' };
             }
-        }
-        throw { type: 'failed' };
-    }
-
-    async function readBlob(response, page, requestId) {
-        if (!response.body || !response.body.getReader) {
-            return response.blob();
-        }
-        var reader = response.body.getReader();
-        var contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
-        var received = 0;
-        var chunks = [];
-        while (true) {
+            var data = await response.json();
+            if (!Array.isArray(data.pages) || !data.pages.length) {
+                throw { type: 'notImage' };
+            }
+            if (current.nextPage > Number(data.total || data.pages.length)) {
+                throw { type: 'invalidPage' };
+            }
+            return data;
+        } catch (error) {
             if (requestId !== current.requestId) {
                 throw { type: 'aborted' };
             }
-            var part = await reader.read();
-            if (requestId !== current.requestId) {
-                throw { type: 'aborted' };
+            if (error && error.type) {
+                throw error;
             }
-            if (part.done) {
-                break;
-            }
-            chunks.push(part.value);
-            received += part.value.length;
-            if (contentLength > 0) {
-                setStatus(galleryMessage(strings.loadingGallery, page) + ' ' + Math.round((received / contentLength) * 100) + '%', false);
+            throw { type: controller.signal.aborted ? 'network' : 'server' };
+        } finally {
+            window.clearTimeout(timer);
+            if (current.controller === controller) {
+                current.controller = null;
             }
         }
-        return new Blob(chunks, { type: response.headers.get('Content-Type') || 'image/jpeg' });
-    }
-
-    async function loadPage(id, page, requestId) {
-        var lastError = null;
-        var hostList = domains();
-        for (var i = 0; i < hostList.length; i += 1) {
-            var candidateUrls = [imageUrl(hostList[i], id, page, false)];
-            if (page === 1) {
-                candidateUrls.push(imageUrl(hostList[i], id, page, true));
-            }
-            var stopFailover = false;
-            for (var candidateIndex = 0; candidateIndex < candidateUrls.length; candidateIndex += 1) {
-                var url = candidateUrls[candidateIndex];
-                try {
-                    return await fetchImage(url, id, page, requestId);
-                } catch (error) {
-                    if (requestId !== current.requestId || (error && error.type === 'aborted')) {
-                        throw { type: 'aborted' };
-                    }
-                    if (error && (error.type === 'notFound' || error.type === 'badRequest')) {
-                        lastError = error;
-                        stopFailover = candidateIndex === 0;
-                        break;
-                    }
-                    lastError = error;
-                    // Only a network/CORS failure may use the page-one direct variant.
-                    if (candidateIndex === 0 && page === 1 && error && error.type === 'network') {
-                        continue;
-                    }
-                    if (!error || (error.type !== 'network' && error.type !== 'server')) {
-                        throw error;
-                    }
-                    break;
-                }
-            }
-            if (stopFailover) {
-                break;
-            }
-        }
-        throw lastError || { type: 'failed' };
     }
 
     async function loadGallery() {
-        if (!current.id || current.loading || current.nextPage > maxPages) {
+        if (!current.id || current.loading || (current.pages && current.nextPage > current.pages.pages.length)) {
             return;
         }
         var requestId = ++current.requestId;
@@ -460,29 +315,40 @@
             empty.hidden = true;
         }
         try {
-            while (current.nextPage <= maxPages) {
+            if (!current.pages) {
+                setStatus(galleryMessage(strings.loadingGallery, current.nextPage), false);
+                current.pages = await resolveArtwork(id, requestId);
+            }
+            var pageLimit = Math.min(current.pages.pages.length, maxPages);
+            while (current.nextPage <= pageLimit) {
                 var page = current.nextPage;
                 setStatus(galleryMessage(strings.loadingGallery, page), false);
                 try {
-                    var data = await loadPage(id, page, requestId);
+                    await appendImage(current.pages.pages[page - 1], id, page, requestId);
                     if (requestId !== current.requestId) {
                         return;
                     }
-                    appendImage(data, id, page);
                     current.nextPage += 1;
                 } catch (error) {
                     if (requestId !== current.requestId) {
                         return;
                     }
                     var message = galleryMessage(strings.paused, page);
-                    if (!error || error.type !== 'notFound' || page === 1) {
-                        message += ' ' + (error && strings[error.type] ? strings[error.type] : strings.failed);
-                    }
+                    message += ' ' + (error && strings[error.type] ? strings[error.type] : strings.failed);
                     setStatus(message, true);
                     return;
                 }
             }
-            setStatus(galleryMessage(strings.limit, maxPages), false);
+            if (current.pages.has_more || current.pages.total > maxPages) {
+                setStatus(galleryMessage(strings.limit, maxPages), false);
+            } else {
+                setStatus(galleryMessage(strings.complete, pageLimit, current.pages.total), false);
+            }
+        } catch (error) {
+            if (requestId !== current.requestId) {
+                return;
+            }
+            setStatus(strings[error && error.type] || strings.failed, true);
         } finally {
             if (requestId === current.requestId) {
                 setLoading(false);
@@ -490,63 +356,112 @@
         }
     }
 
-    function appendImage(data, id, page) {
-        var card = cardTemplate.content.firstElementChild.cloneNode(true);
-        var image = card.querySelector('[data-zibll-pixiv-image]');
-        var lightbox = card.querySelector('[data-zibll-pixiv-lightbox]');
-        var copyButton = card.querySelector('[data-zibll-pixiv-copy]');
-        var cardStatus = card.querySelector('[data-zibll-pixiv-card-status]');
-        data.objectUrl = window.URL.createObjectURL(data.blob);
-        current.images.push(data);
-        card.setAttribute('data-page', String(page));
-        card.querySelector('[data-zibll-pixiv-card-page]').textContent = galleryMessage(strings.imagePage, page);
-        image.src = data.objectUrl;
-        image.alt = 'Pixiv artwork ' + id + ' page ' + page;
-        lightbox.href = data.objectUrl;
-        lightbox.addEventListener('click', function (event) {
-            if (typeof window.Miniimgbox === 'function' && window._win && window._win.imgbox) {
-                event.preventDefault();
-                if (event.target === lightbox) {
-                    image.click();
+    function appendImage(data, id, page, requestId) {
+        return new Promise(function (resolve, reject) {
+            var card = cardTemplate.content.firstElementChild.cloneNode(true);
+            var image = card.querySelector('[data-zibll-pixiv-image]');
+            var lightbox = card.querySelector('[data-zibll-pixiv-lightbox]');
+            var copyButton = card.querySelector('[data-zibll-pixiv-copy]');
+            var urls = Array.isArray(data.urls) ? data.urls : [];
+            var urlIndex = 0;
+            var settled = false;
+            var imageTimer = null;
+            var entry = { card: card, url: '' };
+
+            function finish(error) {
+                if (settled) {
+                    return;
                 }
+                settled = true;
+                window.clearTimeout(imageTimer);
+                image.onload = null;
+                image.onerror = null;
+                if (current.cancelImage === cancel) {
+                    current.cancelImage = null;
+                }
+                if (error) {
+                    card.remove();
+                    reject(error);
+                    return;
+                }
+                entry.url = urls[urlIndex];
+                current.images.push(entry);
+                if (typeof window.auto_fun === 'function') {
+                    window.auto_fun();
+                }
+                resolve();
             }
-        });
-        card.querySelector('[data-zibll-pixiv-download]').addEventListener('click', function () {
-            try {
-                var anchor = document.createElement('a');
-                anchor.href = data.objectUrl;
-                anchor.download = data.filename;
-                anchor.rel = 'noopener';
-                document.body.appendChild(anchor);
-                anchor.click();
-                anchor.remove();
-            } catch (error) {
-                cardStatus.textContent = strings.downloadFallback;
-                cardStatus.hidden = false;
-                window.open(data.url, '_blank', 'noopener');
+
+            function cancel() {
+                finish({ type: 'aborted' });
             }
-        });
-        copyButton.addEventListener('click', function () {
-            var failed = function () {
-                cardStatus.textContent = data.url;
-                cardStatus.hidden = false;
+
+            function tryNextUrl() {
+                if (requestId !== current.requestId) {
+                    finish({ type: 'aborted' });
+                    return;
+                }
+                if (urlIndex >= urls.length) {
+                    finish({ type: 'network' });
+                    return;
+                }
+                entry.url = urls[urlIndex];
+                lightbox.href = entry.url;
+                image.src = entry.url;
+                imageTimer = window.setTimeout(function () {
+                    urlIndex += 1;
+                    tryNextUrl();
+                }, Number(config.timeout || 15000));
+            }
+
+            card.setAttribute('data-page', String(page));
+            card.querySelector('[data-zibll-pixiv-card-page]').textContent = galleryMessage(strings.imagePage, page);
+            image.alt = 'Pixiv artwork ' + id + ' page ' + page;
+            image.loading = 'eager';
+            image.onload = function () {
+                if (requestId !== current.requestId) {
+                    finish({ type: 'aborted' });
+                    return;
+                }
+                finish();
             };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(data.url).then(function () {
-                    copyButton.textContent = strings.copied;
-                    window.setTimeout(function () {
-                        copyButton.textContent = strings.copy;
-                    }, 1500);
-                }).catch(failed);
-            } else {
-                failed();
-            }
+            image.onerror = function () {
+                window.clearTimeout(imageTimer);
+                urlIndex += 1;
+                tryNextUrl();
+            };
+            lightbox.addEventListener('click', function (event) {
+                if (typeof window.Miniimgbox === 'function' && window._win && window._win.imgbox) {
+                    event.preventDefault();
+                    if (event.target === lightbox) {
+                        image.click();
+                    }
+                }
+            });
+            card.querySelector('[data-zibll-pixiv-download]').addEventListener('click', function () {
+                window.open(entry.url, '_blank', 'noopener');
+            });
+            copyButton.addEventListener('click', function () {
+                var failed = function () {
+                    card.querySelector('[data-zibll-pixiv-card-status]').textContent = entry.url;
+                    card.querySelector('[data-zibll-pixiv-card-status]').hidden = false;
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(entry.url).then(function () {
+                        copyButton.textContent = strings.copied;
+                        window.setTimeout(function () {
+                            copyButton.textContent = strings.copy;
+                        }, 1500);
+                    }).catch(failed);
+                } else {
+                    failed();
+                }
+            });
+            gallery.appendChild(card);
+            gallery.hidden = false;
+            current.cancelImage = cancel;
+            tryNextUrl();
         });
-        gallery.appendChild(card);
-        gallery.hidden = false;
-        if (typeof window.auto_fun === 'function') {
-            window.auto_fun();
-        }
     }
 
     function submitParsed(parsed) {
@@ -570,6 +485,7 @@
         current.id = parsed.id;
         current.startPage = parsed.page;
         current.nextPage = parsed.page;
+        current.pages = null;
         current.userId = parsed.userId || '';
         root.setAttribute('data-id', current.id);
         root.setAttribute('data-page', String(current.startPage));

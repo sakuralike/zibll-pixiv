@@ -84,6 +84,9 @@ msgstr "{count} 枚読み込み済み。{page} 枚目が存在するか確認で
 msgid "已加载 {count} 张，已达到第 {limit} 页安全上限，未继续探测。"
 msgstr "{count} 枚読み込み済み。安全上限の {limit} ページに達したため、以降の確認を停止しました。"
 
+msgid "已加载 {count} 张，共 {total} 张。"
+msgstr "{count} 枚読み込み済み。全 {total} 枚です。"
+
 msgid "第 {page} 张"
 msgstr "{page} 枚目"
 

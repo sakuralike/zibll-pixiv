@@ -22,6 +22,8 @@ $cases = array(
     array('https://www.pixiv.net/artworks/82775556#2', '82775556', 2, '', ''),
     array('https://www.pixiv.net/member_illust.php?mode=medium&illust_id=82775556', '82775556', 1, '', ''),
     array('https://pixiv.re/82775556-2.jpg', '82775556', 2, '', ''),
+    array('https://i.pixiv.re/img-original/img/2020/07/16/00/00/17/82999138_p1.png', '82999138', 2, '', ''),
+    array('https://i.pixiv.nl/img-original/img/2020/07/16/00/00/17/82999138_p0.png', '82999138', 1, '', ''),
     array('https://pixiv.net/users/42/artworks/82775556', '82775556', 1, '42', ''),
     array('https://evil.com/artworks/82775556', '', 1, '', 'unrecognized'),
     array('http://www.pixiv.net/artworks/82775556', '', 1, '', 'unrecognized'),

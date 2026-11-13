@@ -52,7 +52,7 @@ final class Zibll_Pixiv_Request_Policy
     }
 
     /**
-     * Build one browser-facing image URL.
+     * Build one legacy ID-based proxy URL.
      */
     public static function image_url(string $domain, string $id, int $page = 1): string
     {
@@ -76,7 +76,7 @@ final class Zibll_Pixiv_Request_Policy
             );
         }
 
-        $url = 'https://' . $domain . '/1.jpg';
+        $url = 'https://i.' . $domain . '/img-original/img/2018/04/24/01/51/35/68377968_p0.png';
         $response = wp_remote_head(
             $url,
             array(
