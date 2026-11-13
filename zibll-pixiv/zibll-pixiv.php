@@ -3,7 +3,7 @@
  * Plugin Name: Zibll Pixiv 图片查看器
  * Plugin URI: https://github.com/sakuralike/zibll-pixiv
  * Description: 使用 pixiv.re / pixiv.nl 代理按 Pixiv 作品 ID 预览单张图片，并提供单张浏览器下载。
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 7.0
  * Requires PHP: 8.0
  * Tested up to: 7.1
@@ -20,7 +20,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('ZIBLL_PIXIV_VERSION', '0.1.0');
+define('ZIBLL_PIXIV_VERSION', '0.1.1');
 define('ZIBLL_PIXIV_FILE', __FILE__);
 define('ZIBLL_PIXIV_DIR', plugin_dir_path(__FILE__));
 define('ZIBLL_PIXIV_URL', plugin_dir_url(__FILE__));
